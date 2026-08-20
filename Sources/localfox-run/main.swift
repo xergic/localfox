@@ -19,6 +19,10 @@ enum CLI {
             await environment(arguments)
         case "run":
             await runService(arguments)
+        case "caddy-config":
+            caddyConfig(arguments)
+        case "up":
+            await up(arguments)
         case "help", "--help", "-h":
             usage()
         default:
@@ -33,6 +37,8 @@ enum CLI {
           detect <directory>   Scan a project and print what Localfox would configure
           env [--no-cache]     Print the environment resolved from your login shell
           run <dir> -- <cmd>   Start a dev command and report the port it binds
+          caddy-config <h:p>…  Print the proxy config for host:port pairs
+          up <h:p>…            Start the proxy for host:port pairs on 8080/8443
           help                 This text
 
         `up`, which adds the proxy, is not built yet.
@@ -171,18 +177,8 @@ enum CLI {
         streamOutput(process)
 
         // Ctrl-C must tear down the tree, not orphan it.
-        let group = process.processGroup
-        signal(SIGINT, SIG_IGN)
-        let interrupt = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-        interrupt.setEventHandler {
-            Task {
-                print("\nstopping process group \(group)")
-                let outcome = await ProcessSpawner.terminate(group: group)
-                print("stopped: \(outcome)")
-                exit(0)
-            }
-        }
-        interrupt.resume()
+        let teardown = installTeardown(group: process.processGroup, label: "service")
+        defer { teardown.forEach { $0.cancel() } }
 
         do {
             let listener = try await PortDiscovery().waitForPort(
@@ -217,10 +213,119 @@ enum CLI {
         }
     }
 
+    /// Prints the config Localfox would hand the proxy, for
+    /// `localfox-run caddy-config wishfox.localhost:3000 api.wishfox.localhost:4000`.
+    static func caddyConfig(_ arguments: [String]) {
+        let layout = CaddyLayout.development()
+        let builder = CaddyConfigBuilder(options: .init(
+            httpPort: 8080,
+            httpsPort: 8443,
+            storageRoot: layout.storageRoot.path,
+            logPath: layout.logFile.path,
+            adminSocketPath: layout.adminSocket.path,
+            caID: "localfox",
+            caName: "Localfox Local Authority"
+        ))
+        do {
+            FileHandle.standardOutput.write(try builder.build(routes: parseRoutes(arguments)))
+            print("")
+        } catch {
+            fail("could not build the config: \(error)", hint: "this is a bug, please report it")
+        }
+    }
+
+    /// Runs the proxy unprivileged on 8080/8443 so the whole path is testable
+    /// without the root helper. The app has no such fallback.
+    static func up(_ arguments: [String]) async {
+        let routes = parseRoutes(arguments)
+        let layout = CaddyLayout.development()
+        let options = CaddyConfigBuilder.Options(
+            httpPort: 8080,
+            httpsPort: 8443,
+            storageRoot: layout.storageRoot.path,
+            logPath: layout.logFile.path,
+            adminSocketPath: layout.adminSocket.path,
+            caID: "localfox",
+            caName: "Localfox Local Authority"
+        )
+
+        let config: Data
+        do {
+            config = try CaddyConfigBuilder(options: options).build(routes: routes)
+        } catch {
+            fail("could not build the config: \(error)", hint: "this is a bug")
+        }
+
+        let supervisor = CaddySupervisor(layout: layout)
+        let caddy: SpawnedProcess
+        do {
+            caddy = try await supervisor.start(configJSON: config, httpPort: 8080, httpsPort: 8443)
+        } catch {
+            fail(error.localizedDescription, hint: "caddy binary: \(layout.binary.path)")
+        }
+
+        print("caddy running, pid \(caddy.pid)")
+        print("admin socket \(layout.adminSocket.path)")
+        for route in routes {
+            print("  https://\(route.domain.value):8443 -> 127.0.0.1:\(route.port)")
+        }
+
+        let teardown = installTeardown(group: caddy.processGroup, label: "caddy")
+        defer { teardown.forEach { $0.cancel() } }
+
+        print("press ctrl-c to stop.")
+        while true { try? await Task.sleep(for: .seconds(3600)) }
+    }
+
+    static func parseRoutes(_ arguments: [String]) -> [ProxyRoute] {
+        var routes: [ProxyRoute] = []
+        for (index, pair) in arguments.enumerated() {
+            let parts = pair.split(separator: ":")
+            guard parts.count == 2, let port = Int(parts[1]),
+                  let domain = LocalDomain(String(parts[0])),
+                  let route = ProxyRoute(id: "svc\(index)", domain: domain, port: port) else {
+                fail("could not read \"\(pair)\"", hint: "use host.localhost:3000")
+            }
+            routes.append(route)
+        }
+        guard !routes.isEmpty else {
+            fail("needs at least one host:port", hint: "localfox-run up wishfox.localhost:3000")
+        }
+        return routes
+    }
+
+    /// Tears the child down on either signal.
+    ///
+    /// SIGTERM matters as much as SIGINT: `pkill`, a `make` interrupt and a
+    /// logout all send TERM, and without a handler the CLI dies while Caddy or
+    /// the dev server keeps holding its ports.
+    static func installTeardown(group: pid_t, label: String) -> [DispatchSourceSignal] {
+        // A dedicated queue, not `.main`. Under a Swift concurrency top-level
+        // await the main queue is not drained the way a run loop would drain it,
+        // so a source attached to it never fires and the child is orphaned.
+        let queue = DispatchQueue(label: "net.kandera.localfox.signals")
+        return [SIGINT, SIGTERM].map { number in
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: queue)
+            source.setEventHandler {
+                // Synchronous, because `exit` must not race an unfinished Task.
+                _ = kill(-group, SIGTERM)
+                usleep(400_000)
+                if ProcessSpawner.isAlive(group) { _ = kill(-group, SIGKILL) }
+                print("\n\(label) stopped")
+                fflush(stdout)
+                exit(0)
+            }
+            source.resume()
+            return source
+        }
+    }
+
     static func fail(_ message: String, hint: String) -> Never {
         FileHandle.standardError.write(Data("localfox-run: \(message)\n  \(hint)\n".utf8))
         exit(1)
     }
 }
 
+setvbuf(stdout, nil, _IOLBF, 0)
 await CLI.run()

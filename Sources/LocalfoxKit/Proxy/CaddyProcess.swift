@@ -158,11 +158,9 @@ public struct CaddySupervisor: Sendable {
 
         let process = try ProcessSpawner.spawn(SpawnRequest(
             executable: layout.binary.path,
-            arguments: [
-                layout.binary.path, "run",
-                "--config", layout.configFile.path,
-                "--adapter", "json"
-            ],
+            // No --adapter: JSON is Caddy's native format and naming it as an
+            // adapter fails with "unrecognized config adapter: json".
+            arguments: [layout.binary.path, "run", "--config", layout.configFile.path],
             workingDirectory: layout.storageRoot,
             environment: environment
         ))
@@ -188,10 +186,25 @@ public struct CaddySupervisor: Sendable {
         throw CaddyError.didNotBecomeReady(seconds: seconds, log: captured)
     }
 
-    /// Non-blocking read, so a quiet Caddy never stalls the readiness loop.
+    /// Reads whatever is buffered without waiting.
+    ///
+    /// `FileHandle.availableData` is NOT non-blocking: it waits for data or EOF.
+    /// Caddy sends its log to a file, so its stderr stays silent and a readiness
+    /// loop that called `availableData` would hang there forever while the proxy
+    /// was in fact already up.
     private static func drain(_ handle: FileHandle) -> String {
-        let data = handle.availableData
-        return data.isEmpty ? "" : String(decoding: data, as: UTF8.self)
+        let descriptor = handle.fileDescriptor
+        let flags = fcntl(descriptor, F_GETFL)
+        guard flags != -1, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != -1 else { return "" }
+
+        var output = ""
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = read(descriptor, &buffer, buffer.count)
+            guard count > 0 else { break }
+            output += String(decoding: buffer[0..<count], as: UTF8.self)
+        }
+        return output
     }
 
     public func stop(_ process: SpawnedProcess) async {

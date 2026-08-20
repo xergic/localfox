@@ -1,0 +1,80 @@
+import AppKit
+import LocalfoxKit
+import SwiftUI
+
+@main
+struct LocalfoxApp: App {
+    @State private var state = AppState()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+    var body: some Scene {
+        MenuBarExtra {
+            MenuView()
+                .environment(state)
+                .task { await state.load() }
+        } label: {
+            MenuBarLabel(runningCount: state.runningCount)
+        }
+        // `.window` is what makes this a custom-drawn popover rather than an
+        // NSMenu, which cannot host arbitrary SwiftUI.
+        .menuBarExtraStyle(.window)
+
+        // A single Window, not a WindowGroup: there is only ever one dashboard.
+        Window("Localfox", id: WindowPresenter.dashboardSceneID) {
+            DashboardView()
+                .environment(state)
+                .frame(minWidth: 900, minHeight: 620)
+                .task { await state.load() }
+        }
+        .defaultSize(width: Theme.Metrics.dashboardWidth, height: Theme.Metrics.dashboardHeight)
+        .defaultPosition(.center)
+        .windowResizability(.contentMinSize)
+        .windowStyle(.hiddenTitleBar)
+        .restorationBehavior(.disabled)
+        .commands {
+            // The app is LSUIElement so this menu is never drawn. It still
+            // matters, because NSApplication.sendEvent offers every key-down to
+            // the main menu whether or not it is visible, and without these
+            // items Cmd+C, Cmd+V, Cmd+A and Cmd+Z do nothing in a text field.
+            TextEditingCommands()
+            CommandGroup(replacing: .appTermination) {
+                Button("Quit Localfox") { NSApplication.shared.terminate(nil) }
+                    .keyboardShortcut("q")
+            }
+            CommandGroup(after: .windowSize) {
+                Button("Close") { NSApp.keyWindow?.performClose(nil) }
+                    .keyboardShortcut("w")
+            }
+        }
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Closing the dashboard must not quit a menu bar app.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+}
+
+private struct MenuBarLabel: View {
+    let runningCount: Int
+
+    /// Sized here rather than with `.frame`, which SwiftUI ignores on a
+    /// MenuBarExtra label.
+    private static let glyph: NSImage = {
+        let image = NSImage(resource: .menuBarFox).copy() as? NSImage ?? NSImage()
+        image.size = NSSize(width: 17, height: 17)
+        image.isTemplate = true
+        return image
+    }()
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(nsImage: Self.glyph)
+            if runningCount > 0 {
+                Text(String(runningCount))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+            }
+        }
+    }
+}

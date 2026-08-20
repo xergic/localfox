@@ -60,15 +60,25 @@ public struct CaddyConfigBuilder: Sendable {
             ],
             "apps": [
                 "http": [
+                    // Without these, Caddy's automatic HTTPS logic uses the
+                    // well-known 80 and 443 for the redirect listener it adds
+                    // itself, and an unprivileged run dies with
+                    // "listening on 127.0.0.1:80: bind: permission denied".
+                    "http_port": options.httpPort,
+                    "https_port": options.httpsPort,
                     "servers": [
                         "http": [
                             "listen": listeners(port: options.httpPort),
-                            "routes": [redirectRoute()]
+                            "routes": [redirectRoute()],
+                            // This server is the redirect. Letting Caddy add its
+                            // own on top would bind a second listener.
+                            "automatic_https": ["disable_redirects": true]
                         ],
                         "https": [
                             "listen": listeners(port: options.httpsPort),
                             "idle_timeout": "24h",
-                            "routes": httpsRoutes
+                            "routes": httpsRoutes,
+                            "automatic_https": ["disable_redirects": true]
                         ]
                     ]
                 ],

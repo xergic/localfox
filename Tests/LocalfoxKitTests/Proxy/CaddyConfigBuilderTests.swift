@@ -36,8 +36,13 @@ struct CaddyConfigBuilderTests {
           },
           "apps" : {
             "http" : {
+              "http_port" : 8080,
+              "https_port" : 8443,
               "servers" : {
                 "http" : {
+                  "automatic_https" : {
+                    "disable_redirects" : true
+                  },
                   "listen" : [
                     "127.0.0.1:8080",
                     "[::1]:8080"
@@ -59,6 +64,9 @@ struct CaddyConfigBuilderTests {
                   ]
                 },
                 "https" : {
+                  "automatic_https" : {
+                    "disable_redirects" : true
+                  },
                   "idle_timeout" : "24h",
                   "listen" : [
                     "127.0.0.1:8443",
@@ -279,5 +287,37 @@ struct CaddyConfigBuilderTests {
         #expect(CaddyConfigBuilder.upstreamAdminPath(for: route) == "/id/svc-api-upstream")
         let body = try CaddyConfigBuilder.upstreamPatchBody(port: 5000)
         #expect(String(data: body, encoding: .utf8) == "{\"dial\":\"127.0.0.1:5000\"}")
+    }
+
+    /// Caddy's automatic HTTPS adds its own redirect listener on the well-known
+    /// port 80 unless told otherwise, so an unprivileged run died with
+    /// "listening on 127.0.0.1:80: bind: permission denied" even though every
+    /// listener in this config named 8080.
+    @Test("the configured ports replace Caddy's well-known defaults")
+    func declaresItsOwnPorts() throws {
+        let object = try decoded()
+        let apps = try #require(object["apps"] as? [String: Any])
+        let http = try #require(apps["http"] as? [String: Any])
+        #expect(http["http_port"] as? Int == 8080)
+        #expect(http["https_port"] as? Int == 8443)
+    }
+
+    @Test("both servers refuse Caddy's automatic redirect listener")
+    func disablesAutomaticRedirects() throws {
+        let object = try decoded()
+        let apps = try #require(object["apps"] as? [String: Any])
+        let http = try #require(apps["http"] as? [String: Any])
+        let servers = try #require(http["servers"] as? [String: Any])
+        for (name, server) in servers {
+            let entry = try #require(server as? [String: Any])
+            let automatic = entry["automatic_https"] as? [String: Any]
+            #expect(automatic?["disable_redirects"] as? Bool == true, "\(name) would bind a second listener")
+        }
+    }
+
+    private func decoded() throws -> [String: Any] {
+        let data = try CaddyConfigBuilder(options: options).build(routes: routes)
+        let object = try JSONSerialization.jsonObject(with: data)
+        return try #require(object as? [String: Any])
     }
 }
