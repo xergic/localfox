@@ -40,12 +40,11 @@ reinstall-helper: ## Show launchd's view of the helper, then force a re-registra
 	@launchctl print system/$(HELPER_LABEL) 2>&1 | head -20 || true
 	@echo "--- unregister via the app's Settings, then relaunch to re-register ---"
 
-snapshot: app ## Render popover, dashboard, preferences and about snapshots to snapshots/
+snapshot: app ## Render the popover and dashboard to snapshots/
 	@mkdir -p snapshots
 	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot snapshots/popover.png
+	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot snapshots/popover-hover.png --hover
 	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot-dashboard snapshots/dashboard.png
-	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot-prefs snapshots/preferences.png
-	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot-about snapshots/about.png
 
 archive: ## Build an ad hoc signed Release app and DMG into dist/
 	@Tools/archive.sh $(VERSION)
