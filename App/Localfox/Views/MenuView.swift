@@ -151,6 +151,9 @@ private struct FooterButton: View {
 struct ProjectSection: View {
     let project: Project
     var forcesHover = false
+    /// Bound only by the dashboard. The popover has nowhere to show a detail
+    /// pane, so it leaves this nil and rows stay unselectable.
+    var selection: Binding<UUID?>?
 
     @Environment(AppState.self) private var state
 
@@ -192,7 +195,7 @@ struct ProjectSection: View {
             )
 
             ForEach(project.services) { service in
-                ServiceRow(service: service, forcesHover: forcesHover)
+                ServiceRow(service: service, forcesHover: forcesHover, selection: selection)
             }
             .padding(.leading, 7)
         }
@@ -206,9 +209,12 @@ struct ProjectSection: View {
 struct ServiceRow: View {
     let service: Service
     var forcesHover = false
+    var selection: Binding<UUID?>?
 
     @Environment(AppState.self) private var state
     @State private var isHovering = false
+
+    private var isSelected: Bool { selection?.wrappedValue == service.id }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -276,9 +282,14 @@ struct ServiceRow: View {
         }
         .background(
             RoundedRectangle(cornerRadius: Theme.Metrics.rowRadius, style: .continuous)
-                .fill(isHovering ? Theme.cardHover : .clear)
+                .fill(isHovering || isSelected ? Theme.cardHover : .clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Metrics.rowRadius, style: .continuous)
+                        .strokeBorder(isSelected ? Theme.accent : .clear, lineWidth: 1.5)
+                )
         )
         .contentShape(Rectangle())
+        .onTapGesture { selection?.wrappedValue = service.id }
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
         }

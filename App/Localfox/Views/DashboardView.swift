@@ -99,7 +99,7 @@ struct DashboardContent: View {
                 Scrollable(scrolls: scrolls) {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(state.projects) { project in
-                            ProjectSection(project: project)
+                            ProjectSection(project: project, selection: $selection)
                         }
                     }
                     .padding(10)
@@ -125,14 +125,26 @@ struct DashboardContent: View {
                 if let error = state.lastError {
                     ErrorBanner(message: error) { state.clearError() }
                 }
-                SetupCard()
-                EnvironmentCard()
+                if let service = selectedService {
+                    ServiceDetailPane(service: service, scrolls: scrolls)
+                } else {
+                    SetupCard()
+                    EnvironmentCard()
+                }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var selectedService: Service? {
+        guard let selection else { return nil }
+        for project in state.projects {
+            if let service = project.service(id: selection) { return service }
+        }
+        return nil
     }
 }
 
