@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Security
 
 /// Where Caddy's files live and how to reach its admin API.
 ///
@@ -171,13 +172,14 @@ public struct CaddySupervisor: Sendable {
         configJSON: Data,
         httpPort: Int,
         httpsPort: Int,
-        privileged: Bool = false
+        privileged: Bool = false,
+        signingTeam: String? = nil
     ) async throws -> SpawnedProcess {
         guard FileManager.default.isExecutableFile(atPath: layout.binary.path) else {
             throw CaddyError.binaryMissing(path: layout.binary.path)
         }
         if privileged {
-            try Self.assertSafeToExecuteAsRoot(layout.binary)
+            try Self.assertSafeToExecuteAsRoot(layout.binary, team: signingTeam)
         }
 
         for port in [httpPort, httpsPort] where !Self.isPortFree(port) {
@@ -264,13 +266,18 @@ public struct CaddySupervisor: Sendable {
 // MARK: - Filesystem safety
 
 public extension CaddySupervisor {
-    /// Refuses to execute anything that a non-root user could have replaced.
+    /// Refuses to execute anything that is not the Caddy inside this signed bundle.
     ///
-    /// Walks the whole ancestor chain, because a writable *directory* anywhere
-    /// above the binary is enough to swap it, and refuses a symlink outright so
-    /// the path that was checked is the path that runs.
-    static func assertSafeToExecuteAsRoot(_ binary: URL) throws {
-        let manager = FileManager.default
+    /// The check is on the *enclosing app bundle*, not on the binary alone. The
+    /// bundle seal covers `Contents/MacOS/caddy` through `CodeResources`, so
+    /// replacing that file breaks the app's signature and this fails. Checking
+    /// the binary's own signature would not work: it is copied in already ad hoc
+    /// signed, and a build phase cannot re-sign it before Xcode seals the bundle.
+    ///
+    /// POSIX ownership is deliberately not the invariant. An app dragged into
+    /// `/Applications` is owned by the installing user, so an ownership test
+    /// refuses every real installation.
+    static func assertSafeToExecuteAsRoot(_ binary: URL, team: String?) throws {
         let resolved = binary.resolvingSymlinksInPath()
         guard resolved.path == binary.standardizedFileURL.path else {
             throw CaddyError.binaryNotTrusted(
@@ -278,26 +285,54 @@ public extension CaddySupervisor {
             )
         }
 
-        var url = binary.standardizedFileURL
-        while true {
-            guard let attributes = try? manager.attributesOfItem(atPath: url.path) else { break }
-            let owner = attributes[.ownerAccountID] as? UInt ?? 0
-            let mode = attributes[.posixPermissions] as? Int ?? 0
+        // An ad hoc local build has no team. Rather than trust anything, the
+        // daemon refuses: a `make app` build cannot drive the privileged path.
+        guard let team else {
+            throw CaddyError.binaryNotTrusted(
+                path: binary.path,
+                reason: "this build is not signed with a Developer team, so its Caddy cannot be verified"
+            )
+        }
 
-            if owner != 0 {
-                throw CaddyError.binaryNotTrusted(
-                    path: binary.path, reason: "\(url.path) is not owned by root"
-                )
-            }
-            // Group or world write on any ancestor means someone else can swap it.
-            if mode & 0o022 != 0 {
-                throw CaddyError.binaryNotTrusted(
-                    path: binary.path, reason: "\(url.path) is writable by other users"
-                )
-            }
-            let parent = url.deletingLastPathComponent()
-            if parent.path == url.path { break }
-            url = parent
+        let bundleURL = binary
+            .deletingLastPathComponent()   // MacOS
+            .deletingLastPathComponent()   // Contents
+            .deletingLastPathComponent()   // .app
+        guard bundleURL.pathExtension == "app" else {
+            throw CaddyError.binaryNotTrusted(
+                path: binary.path, reason: "it is not inside an application bundle"
+            )
+        }
+
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(bundleURL as CFURL, [], &staticCode) == errSecSuccess,
+              let staticCode else {
+            throw CaddyError.binaryNotTrusted(
+                path: binary.path, reason: "\(bundleURL.lastPathComponent) has no code signature"
+            )
+        }
+
+        var requirement: SecRequirement?
+        let text = """
+        anchor apple generic \
+        and identifier "\(HelperIdentity.appBundleIdentifier)" \
+        and certificate leaf[subject.OU] = "\(team)"
+        """
+        guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess,
+              let requirement else {
+            throw CaddyError.binaryNotTrusted(
+                path: binary.path, reason: "the signing requirement could not be built"
+            )
+        }
+
+        // kSecCSCheckAllArchitectures plus the default resource check is what
+        // makes a swapped nested file fail rather than pass.
+        let status = SecStaticCodeCheckValidity(staticCode, [], requirement)
+        guard status == errSecSuccess else {
+            throw CaddyError.binaryNotTrusted(
+                path: binary.path,
+                reason: "\(bundleURL.lastPathComponent) failed its signature check (OSStatus \(status))"
+            )
         }
     }
 

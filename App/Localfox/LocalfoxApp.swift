@@ -59,9 +59,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if CommandLine.arguments.contains("--verify-runtime") {
+        let arguments = CommandLine.arguments
+        if arguments.contains("--verify-runtime") {
             Task { @MainActor in
                 await SnapshotRenderer.runVerification(state: AppState())
+            }
+            return
+        }
+        if arguments.contains("--install-helper") {
+            Task { @MainActor in
+                await SnapshotRenderer.runHelperInstall(state: AppState())
+            }
+            return
+        }
+        if arguments.contains("--verify-proxy") {
+            Task { @MainActor in
+                await SnapshotRenderer.runProxyVerify(state: AppState())
+            }
+            return
+        }
+        if arguments.contains("--verify-helper") {
+            Task { @MainActor in
+                await SnapshotRenderer.runHelperVerify(state: AppState())
+            }
+            return
+        }
+        if arguments.contains("--uninstall-helper") {
+            Task { @MainActor in
+                await SnapshotRenderer.runHelperUninstall(state: AppState())
             }
             return
         }

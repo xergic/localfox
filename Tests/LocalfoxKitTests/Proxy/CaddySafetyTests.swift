@@ -24,23 +24,6 @@ struct CaddyBinarySafetyTests {
         #expect(!layout.storageRoot.path.contains("/Users/"))
     }
 
-    @Test("a binary owned by a normal user is refused")
-    func refusesUserOwnedBinary() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("localfox-tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let binary = directory.appendingPathComponent("caddy")
-        FileManager.default.createFile(atPath: binary.path, contents: Data("#!/bin/sh\n".utf8))
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
-
-        // The test runs as a normal user, so this file is not root-owned.
-        #expect(throws: CaddyError.self) {
-            try CaddySupervisor.assertSafeToExecuteAsRoot(binary)
-        }
-    }
-
     @Test("a symlinked binary is refused rather than resolved")
     func refusesSymlink() throws {
         let directory = FileManager.default.temporaryDirectory
@@ -53,24 +36,30 @@ struct CaddyBinarySafetyTests {
             at: link, withDestinationURL: URL(fileURLWithPath: "/bin/sh")
         )
         #expect(throws: CaddyError.self) {
-            try CaddySupervisor.assertSafeToExecuteAsRoot(link)
+            try CaddySupervisor.assertSafeToExecuteAsRoot(link, team: "ABCDE12345")
         }
     }
 
-    /// `/bin/sh` is root-owned inside a root-owned, non-writable chain, which is
-    /// the shape the check is meant to accept.
-    @Test("a root-owned system binary passes")
-    func acceptsSystemBinary() throws {
-        try CaddySupervisor.assertSafeToExecuteAsRoot(URL(fileURLWithPath: "/bin/sh"))
+    /// An ad hoc build has no team, and the daemon refuses rather than trusting
+    /// whatever it finds. A local `make app` therefore cannot drive the
+    /// privileged path, which is the intended trade.
+    @Test("a build with no signing team is refused")
+    func refusesUnsignedBuild() throws {
+        #expect(throws: CaddyError.self) {
+            try CaddySupervisor.assertSafeToExecuteAsRoot(
+                URL(fileURLWithPath: "/bin/sh"), team: nil
+            )
+        }
     }
 
-    /// The real path on this machine, and the reason the fallback was dangerous.
-    @Test("a Homebrew path is refused when it is group writable")
-    func refusesHomebrewWhenWritable() throws {
-        let homebrew = URL(fileURLWithPath: "/opt/homebrew/bin/caddy")
-        guard FileManager.default.fileExists(atPath: homebrew.path) else { return }
+    /// The signature, not the owner, is the invariant. A system binary is signed
+    /// by Apple, not by this project's team, so it fails the requirement.
+    @Test("a binary signed by a different team is refused")
+    func refusesForeignTeam() throws {
         #expect(throws: CaddyError.self) {
-            try CaddySupervisor.assertSafeToExecuteAsRoot(homebrew)
+            try CaddySupervisor.assertSafeToExecuteAsRoot(
+                URL(fileURLWithPath: "/bin/sh"), team: "ZZZZZZZZZZ"
+            )
         }
     }
 }

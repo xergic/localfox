@@ -1,4 +1,6 @@
 import AppKit
+import LocalfoxKit
+import ServiceManagement
 import SwiftUI
 
 /// Renders a surface to a PNG and exits, so the design can be reviewed without
@@ -57,6 +59,97 @@ enum SnapshotRenderer {
             print("  \(service.name): \(state.status(of: service).label)")
         }
         exit(failed ? 1 : 0)
+    }
+
+    /// Drives helper registration headlessly, so the approval flow can be
+    /// exercised without clicking through the interface.
+    static func runHelperInstall(state: AppState) async {
+        print("bundle: \(Bundle.main.bundleURL.path)")
+        // Raw, because the wrapped message hides the code that says why.
+        let service = SMAppService.daemon(plistName: HelperIdentity.plistName)
+        print("status: \(service.status.rawValue)")
+        do {
+            try service.register()
+            print("register(): OK")
+        } catch let error as NSError {
+            print("register() failed  domain=\(error.domain) code=\(error.code)")
+            print("  \(error.localizedDescription)")
+        }
+        await state.refreshSetup()
+        print("before: \(state.helper)")
+
+        await state.installHelper()
+        print("after:  \(state.helper)")
+        if let error = state.helperClient.lastError {
+            print("error:  \(error)")
+        }
+
+        switch state.helper {
+        case .requiresApproval:
+            print("")
+            print("Registered. Approve Localfox in System Settings > General >")
+            print("Login Items & Extensions, then run --verify-helper.")
+        case .ready:
+            print("Helper is running.")
+        default:
+            print("Registration did not reach an approvable state.")
+        }
+        exit(0)
+    }
+
+    /// Pushes one route through the root daemon and reports what came back.
+    static func runProxyVerify(state: AppState) async {
+        await state.refreshSetup()
+        print("helper: \(state.helper)")
+        guard state.helper.canServe else {
+            print("helper is not ready, cannot test the proxy")
+            exit(1)
+        }
+
+        guard let domain = LocalDomain("wishfox.localhost"),
+              let route = ProxyRoute(id: "verify1", domain: domain, port: 3041) else {
+            print("could not build a route")
+            exit(1)
+        }
+
+        do {
+            print("pushing \(route.domain) -> 127.0.0.1:\(route.port)")
+            try await state.helperClient.setRoutes([route])
+            print("setRoutes: OK")
+        } catch {
+            print("setRoutes failed: \(error.localizedDescription)")
+            let log = (try? await state.helperClient.caddyLog(lines: 30)) ?? ""
+            if !log.isEmpty { print("caddy log:\n\(log)") }
+            exit(1)
+        }
+
+        await state.refreshSetup()
+        print("helper: \(state.helper)")
+        print("trust:  \(state.trust)")
+        if let identity = state.trust.identity {
+            print("CA:     \(identity.commonName)")
+            print("        \(identity.fingerprint)")
+        }
+        exit(0)
+    }
+
+    /// Reports what the helper says once it is approved.
+    static func runHelperVerify(state: AppState) async {
+        await state.refreshSetup()
+        print("helper: \(state.helper)")
+        print("trust:  \(state.trust)")
+        if let error = state.helperClient.lastError {
+            print("error:  \(error)")
+        }
+        exit(state.helper.canServe ? 0 : 1)
+    }
+
+    /// Removes the daemon registration again.
+    static func runHelperUninstall(state: AppState) async {
+        await state.helperClient.uninstall()
+        await state.refreshSetup()
+        print("after uninstall: \(state.helper)")
+        exit(0)
     }
 
     struct Request {
