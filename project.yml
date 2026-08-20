@@ -1,0 +1,108 @@
+name: Localfox
+options:
+  bundleIdPrefix: net.kandera
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  LocalfoxKit:
+    path: .
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Apple Silicon only. Caddy is 44 MB per slice and macOS 26 supports
+    # almost no Intel hardware, so a universal build doubles the download
+    # for a vanishing audience.
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: NO
+
+targets:
+  Localfox:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Localfox
+        excludes:
+          - Resources/Fonts
+          - Resources/Localfox.icon
+          - Library
+      # A folder reference, so ATSApplicationFontsPath finds Contents/Resources/Fonts.
+      - path: App/Localfox/Resources/Fonts
+        type: folder
+        optional: true
+      # An Icon Composer bundle. It is a directory, so it has to be named as a
+      # single file or XcodeGen would walk into it and add its parts separately.
+      - path: App/Localfox/Resources/Localfox.icon
+        type: file
+        buildPhase: resources
+        optional: true
+    dependencies:
+      - package: LocalfoxKit
+        product: LocalfoxKit
+      - target: LocalfoxHelper
+        embed: true
+        codeSign: true
+        copyFiles:
+          destination: executables
+          subpath: ""
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.kandera.localfox
+        PRODUCT_NAME: Localfox
+        INFOPLIST_FILE: App/Localfox/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Localfox/Localfox.entitlements
+        # Ad hoc signing keeps a local build free of a developer team.
+        # A release build overrides this with Developer ID on the command line.
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        # proc_pidinfo, posix_spawn of arbitrary user commands, and killpg are
+        # all unavailable inside the App Sandbox.
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: Localfox
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        COMBINE_HIDPI_IMAGES: YES
+        GENERATE_INFOPLIST_FILE: NO
+    # The daemon plist is sealed into the bundle, so launchd reads it from
+    # Contents/Library/LaunchDaemons and SMAppService addresses it by filename.
+    copyFiles:
+      - destination: wrapper
+        subpath: Contents/Library/LaunchDaemons
+        files:
+          - App/Localfox/Library/LaunchDaemons/net.kandera.localfox.helper.plist
+      # Caddy must be signed after it lands in the bundle, which is what
+      # codeSign on the copy phase does. Signing it in place beforehand and
+      # copying afterwards invalidates the signature.
+      - destination: executables
+        subpath: ""
+        codeSign: true
+        files:
+          - Vendor/caddy/caddy
+
+  LocalfoxHelper:
+    type: tool
+    platform: macOS
+    sources: [Helper/Sources]
+    dependencies:
+      - package: LocalfoxKit
+        product: LocalfoxKit
+    settings:
+      base:
+        # The executable name matches the launchd label by convention, and
+        # BundleProgram in the plist points at exactly this path.
+        PRODUCT_NAME: net.kandera.localfox.helper
+        PRODUCT_BUNDLE_IDENTIFIER: net.kandera.localfox.helper
+        CODE_SIGN_ENTITLEMENTS: Helper/Helper.entitlements
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES

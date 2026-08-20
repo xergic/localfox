@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>net.kandera.localfox.helper</string>
+
+	<!-- Bundle-relative, so the daemon travels with the app and launchd can
+	     relocate it when the app moves. An absolute Program path would break
+	     the moment the user drags Localfox anywhere. -->
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/net.kandera.localfox.helper</string>
+
+	<!-- Launch on demand. RunAtLoad would keep a root process alive for a tool
+	     the user is not using; the first XPC message is what starts it. -->
+	<key>RunAtLoad</key>
+	<false/>
+
+	<key>MachServices</key>
+	<dict>
+		<key>net.kandera.localfox.helper</key>
+		<true/>
+	</dict>
+
+	<!-- Restart on a crash but not on a clean exit, so stopProxy() followed by
+	     an idle exit does not immediately respawn. -->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+		<key>Crashed</key>
+		<true/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+
+	<!-- Without this, System Settings lists a bare bundle path under Login
+	     Items instead of "Localfox" with its icon, and the approval step reads
+	     as malware to the user. -->
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>net.kandera.localfox</string>
+	</array>
+
+	<key>ProcessType</key>
+	<string>Interactive</string>
+
+	<!-- Caddy derives its default storage path from HOME. Pinned here so the
+	     CA never lands somewhere unreadable, and pinned again in the config. -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/var/root</string>
+	</dict>
+
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/Localfox/helper.log</string>
+	<key>StandardOutPath</key>
+	<string>/Library/Logs/Localfox/helper.log</string>
+</dict>
+</plist>

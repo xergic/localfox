@@ -1,0 +1,16 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+build/
+*.moved-aside
+xcuserdata/
+snapshots/
+dist/
+
+# Agent worktrees
+.claude/worktrees/
+Vendor/
