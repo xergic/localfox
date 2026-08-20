@@ -49,32 +49,52 @@ enum CLI {
             fail("\(url.path) is not a directory", hint: "pass the root of a project")
         }
 
-        guard let snapshot = ProjectResolver().resolve(serviceDirectory: url) else {
-            fail("nothing that looks like a project at \(url.path)",
-                 hint: "Localfox looks for package.json, pyproject.toml, Cargo.toml and friends")
+        let context: DirectoryContext
+        do {
+            context = try DirectoryContext(url: url)
+        } catch {
+            fail("could not read \(url.path): \(error.localizedDescription)",
+                 hint: "check the directory is readable")
         }
+
+        let snapshot = context.snapshot
+        let manager = PackageManagerDetector().resolve(in: url)
+        let detection = DetectionEngine().detect(context.detectionContext())
 
         print(snapshot.name)
-        print("  root      \(snapshot.root.path)")
-        print("  kind      \(snapshot.rootKind)")
-        if let version = snapshot.version {
-            print("  version   \(version)")
-        }
-
-        let scripts = snapshot.scripts.keys.sorted()
-        if scripts.isEmpty {
-            print("  scripts   none")
-        } else {
-            print("  scripts   \(scripts.joined(separator: ", "))")
-        }
-
-        let suggested = LocalDomain.slug(snapshot.name)
-        if let domain = LocalDomain("\(suggested).localhost") {
-            print("  domain    \(domain)")
-        }
+        print("  root      \(snapshot.root.path)  (\(snapshot.rootKind))")
+        if let version = snapshot.version { print("  version   \(version)") }
 
         print("")
-        print("Framework detection lands with the detection track.")
+        print("Detected:")
+        if detection.type == .unknown {
+            print("  nothing recognised")
+        } else {
+            print("  \(detection.type.displayName)  (confidence \(Int(detection.confidence * 100))%)")
+            for item in detection.evidence where item.matched {
+                print("    - \(item.description)")
+            }
+        }
+        print("  \(manager.packageManager.displayName)  (\(manager.reason))")
+
+        let script = CommandBuilder.preferredScript(
+            in: snapshot.scripts, framework: detection.type
+        )
+        print("")
+        if let script, let body = snapshot.scripts[script] {
+            print("Command:  \(CommandBuilder.devCommand(manager.packageManager, script: script))")
+            print("            \(script) = \(body)")
+        } else {
+            print("Command:  no dev script in package.json, set one by hand")
+        }
+
+        if let port = detection.type.defaultPorts.first {
+            print("Expected port: \(port)  (a hint, the real port is discovered at runtime)")
+        }
+
+        if let domain = LocalDomain("\(LocalDomain.slug(snapshot.name)).localhost") {
+            print("Domain:   \(domain)")
+        }
     }
 
     static func environment(_ arguments: [String]) async {
