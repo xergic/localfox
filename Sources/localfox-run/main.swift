@@ -40,8 +40,6 @@ enum CLI {
           caddy-config <h:p>…  Print the proxy config for host:port pairs
           up <h:p>…            Start the proxy for host:port pairs on 8080/8443
           help                 This text
-
-        `up`, which adds the proxy, is not built yet.
         """)
     }
 
