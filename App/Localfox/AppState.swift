@@ -173,8 +173,16 @@ final class AppState {
         for service in project.services { await start(service) }
     }
 
+    /// Concurrent, unlike `startAll`. Each service has its own process group, so
+    /// nothing serialises them, and `terminate` escalates SIGINT to SIGKILL over
+    /// six seconds for one unresponsive server. Sequentially that is six seconds
+    /// per service with the interface waiting on all of them.
     func stopAll(_ project: Project) async {
-        for service in project.services { await stop(service) }
+        await withTaskGroup(of: Void.self) { group in
+            for service in project.services {
+                group.addTask { await self.stop(service) }
+            }
+        }
     }
 
     /// Called when the app is quitting, so no dev server outlives Localfox.
