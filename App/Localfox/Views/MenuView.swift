@@ -154,6 +154,7 @@ struct ProjectSection: View {
     /// Bound only by the dashboard. The popover has nowhere to show a detail
     /// pane, so it leaves this nil and rows stay unselectable.
     var selection: Binding<UUID?>?
+    var showsHoverActions = true
 
     @Environment(AppState.self) private var state
 
@@ -195,7 +196,12 @@ struct ProjectSection: View {
             )
 
             ForEach(project.services) { service in
-                ServiceRow(service: service, forcesHover: forcesHover, selection: selection)
+                ServiceRow(
+                    service: service,
+                    forcesHover: forcesHover,
+                    selection: selection,
+                    showsHoverActions: showsHoverActions
+                )
             }
             .padding(.leading, 7)
         }
@@ -210,11 +216,17 @@ struct ServiceRow: View {
     let service: Service
     var forcesHover = false
     var selection: Binding<UUID?>?
+    /// The dashboard sidebar shows its actions in the detail pane instead, which
+    /// buys back the reserved width. Without that, `api.wishfox.localhost` does
+    /// not fit in three hundred points and truncates to `api.wishfox.local…`,
+    /// hiding the one thing the row exists to show.
+    var showsHoverActions = true
 
     @Environment(AppState.self) private var state
     @State private var isHovering = false
 
     private var isSelected: Bool { selection?.wrappedValue == service.id }
+    private var showsActions: Bool { showsHoverActions && (isHovering || forcesHover) }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -245,7 +257,7 @@ struct ServiceRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .overlay(alignment: .trailing) {
-            if isHovering || forcesHover {
+            if showsActions {
                 HStack(spacing: 1) {
                     if status.isRunning {
                         IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop") {
@@ -335,6 +347,7 @@ struct ServiceRow: View {
     /// the larger width always would cost the domain twenty points of a
     /// three-hundred point sidebar for nothing.
     private var reservedActionWidth: CGFloat {
-        status.isRunning ? Theme.Metrics.rowActionsWidth : Theme.Metrics.rowActionsWidth - 20
+        guard showsHoverActions else { return 0 }
+        return status.isRunning ? Theme.Metrics.rowActionsWidth : Theme.Metrics.rowActionsWidth - 20
     }
 }
