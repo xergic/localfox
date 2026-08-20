@@ -19,7 +19,7 @@ make env      # print the resolved login shell environment
 make lint     # SwiftLint, must stay clean
 make gen      # regenerate Localfox.xcodeproj from project.yml
 make caddy    # fetch and verify the pinned Caddy binary into Vendor/
-make snapshot # render popover, dashboard, preferences and about to snapshots/
+make snapshot # render the popover and dashboard to snapshots/
 make archive  # ad hoc signed Release app and DMG into dist/
 ```
 
@@ -43,6 +43,7 @@ PNGs, or build output.
 | `Tests/LocalfoxKitTests/` | Tests for the kit only. The app and helper targets have none. |
 | `Vendor/caddy/` | Pinned upstream Caddy, fetched by `Tools/fetch-caddy.sh`. |
 | `Tools/` | `fetch-caddy.sh`, `fetch-icons.py`, `archive.sh`, `make-dmg.sh`. |
+| `.github/` | CI on every push, the signed release pipeline on a tag. |
 
 ## What is built
 
@@ -59,7 +60,7 @@ localfox-run up <h:p>...             # run the proxy on 8080/8443, unprivileged
 The app builds and runs as a menu bar agent with a setup wall. The helper compiles
 and is bundled, but registering it needs a Developer ID certificate, so the
 privileged path is not yet exercised end to end.
-| `.github/` | CI on every push, the signed release pipeline on a tag. |
+
 
 ## Architecture
 
@@ -154,8 +155,8 @@ launchd runs as root. There is **no unprivileged fallback in the app**: a `:8443
 would break the one promise the product makes, and users would hardcode it. Until the
 helper is approved, the app shows a setup wall.
 
-`localfox-run` takes `--https-port` so the pipeline stays developable without root. That
-flag exists for the CLI only.
+`localfox-run up` serves on 8080 and 8443 so the whole path stays developable without
+root. That is a CLI affordance only; the app has no such fallback.
 
 ## Releases
 
