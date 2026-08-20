@@ -182,14 +182,18 @@ final class HelperClient {
         SMAppService.daemon(plistName: HelperIdentity.plistName)
     }
 
+    /// `invoke` is `@Sendable` so that neither it nor the reply block it installs
+    /// inherits this class's main actor isolation. `NSXPCConnection` runs both on
+    /// its own queue, and a main actor isolated closure called from there traps
+    /// in `dispatch_assert_queue` and takes the app down with it.
     private func call<Value>(
         operation: String,
-        invoke: (LocalfoxHelperProtocol, OneShotContinuation<Value>) -> Void
+        invoke: @Sendable (LocalfoxHelperProtocol, OneShotContinuation<Value>) -> Void
     ) async throws -> Value {
         do {
             let value: Value = try await withCheckedThrowingContinuation { continuation in
                 let reply = OneShotContinuation(continuation, operation: operation)
-                let proxyObject = activeConnection.remoteObjectProxyWithErrorHandler { error in
+                let proxyObject = activeConnection.remoteObjectProxyWithErrorHandler { @Sendable error in
                     reply.resume(throwing: HelperClientError.transport(operation: operation, underlying: error))
                 }
                 guard let proxy = proxyObject as? LocalfoxHelperProtocol else {
