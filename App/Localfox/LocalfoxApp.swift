@@ -54,6 +54,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard let request = SnapshotRenderer.request else { return }
+        // Rendered offscreen and then exits, so no window is ever shown.
+        Task { @MainActor in
+            await SnapshotRenderer.run(request, state: AppState())
+        }
+    }
 }
 
 private struct MenuBarLabel: View {

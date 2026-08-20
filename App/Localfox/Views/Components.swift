@@ -149,25 +149,3 @@ struct EmptyStateView: View {
         .padding(.horizontal, 20)
     }
 }
-
-/// Grabs the `NSWindow` behind a SwiftUI scene.
-///
-/// It is nil in `makeNSView`, so the work happens in `updateNSView` behind a
-/// coordinator guard to stop it running on every layout pass.
-struct WindowAccessor: NSViewRepresentable {
-    let onAttach: (NSWindow) -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> NSView { NSView() }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        guard !context.coordinator.hasAttached, let window = view.window else { return }
-        context.coordinator.hasAttached = true
-        onAttach(window)
-    }
-
-    final class Coordinator {
-        var hasAttached = false
-    }
-}
