@@ -24,19 +24,27 @@ public struct ProjectResolver: ProjectResolving {
     private static let genericNames: Set<String> = ["api", "web", "app", "server", "client", "src"]
 
     private let maximumDepth: Int
+    private let fileSystem: any FileSystemReading
 
-    public init(maximumDepth: Int = 12) {
+    public init(maximumDepth: Int = 12, fileSystem: any FileSystemReading = RealFileSystem()) {
         self.maximumDepth = maximumDepth
+        self.fileSystem = fileSystem
     }
 
     public func resolve(serviceDirectory rawDirectory: URL) -> ProjectSnapshot? {
-        guard FileManager.default.fileExists(atPath: rawDirectory.path) else { return nil }
+        guard fileSystem.isDirectory(rawDirectory) else { return nil }
 
+        return ManifestFileSystem.$current.withValue(fileSystem) {
+            resolveUsingFileSystem(serviceDirectory: rawDirectory)
+        }
+    }
+
+    private func resolveUsingFileSystem(serviceDirectory rawDirectory: URL) -> ProjectSnapshot? {
         let directory = rawDirectory.standardizedFileURL.resolvingSymlinksInPath()
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.resolvingSymlinksInPath()
 
         let chain = ancestorChain(from: directory, home: home)
-        let entries = Dictionary(uniqueKeysWithValues: chain.map { ($0, Self.directoryEntries(at: $0)) })
+        let entries = Dictionary(uniqueKeysWithValues: chain.map { ($0, directoryEntries(at: $0)) })
 
         let workspaceRoot = chain.reversed().first { isWorkspaceRoot($0, entries: entries) }
         let gitRoot = chain.reversed().first { (entries[$0] ?? []).contains(".git") }
@@ -68,8 +76,8 @@ public struct ProjectResolver: ProjectResolving {
             name: resolvedName(serviceManifest: serviceManifest, rootManifest: rootManifest, root: root),
             version: serviceManifest.version ?? rootManifest.version,
             subpath: subpath(of: directory, relativeTo: root),
-            files: entries[directory] ?? Self.directoryEntries(at: directory),
-            rootFiles: entries[root] ?? Self.directoryEntries(at: root),
+            files: entries[directory] ?? directoryEntries(at: directory),
+            rootFiles: entries[root] ?? directoryEntries(at: root),
             dependencies: combinedManifest.dependencies,
             scripts: combinedManifest.scripts,
             rootKind: rootKind,
@@ -94,8 +102,8 @@ public struct ProjectResolver: ProjectResolving {
         return chain
     }
 
-    private static func directoryEntries(at directory: URL) -> Set<String> {
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return [] }
+    private func directoryEntries(at directory: URL) -> Set<String> {
+        guard let names = try? fileSystem.contentsOfDirectory(at: directory) else { return [] }
         return Set(names)
     }
 
