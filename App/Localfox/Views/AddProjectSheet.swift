@@ -160,7 +160,10 @@ struct AddProjectSheet: View {
 
         isScanning = true
         scanError = nil
-        Task {
+        // Detached, because this view is main actor isolated and an inherited
+        // Task would read every manifest on the main thread, freezing the window
+        // for as long as the directory takes to walk.
+        Task.detached(priority: .userInitiated) {
             do {
                 let result = try ProjectScanner().scan(directory: url)
                 await MainActor.run { adopt(result) }
