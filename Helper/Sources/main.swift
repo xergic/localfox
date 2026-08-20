@@ -1,6 +1,47 @@
+import Darwin
+import Dispatch
 import Foundation
+import LocalfoxKit
 
-// Placeholder so the app target links while the daemon is being written.
-// The real entry point stands up an NSXPCListener and parks on a run loop.
-FileHandle.standardError.write(Data("net.kandera.localfox.helper is not implemented yet\n".utf8))
-exit(1)
+HelperService.cleanUpOrphanedCaddy()
+
+let service = HelperService()
+let listener = NSXPCListener(machServiceName: HelperIdentity.machServiceName)
+listener.delegate = service
+listener.resume()
+
+private let terminationHandler = TerminationSignalHandler(service: service)
+withExtendedLifetime(terminationHandler) {
+    RunLoop.main.run()
+}
+
+private final class TerminationSignalHandler: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "net.kandera.localfox.helper.signals")
+    private let service: HelperService
+    private var sources: [DispatchSourceSignal] = []
+    private var isStopping = false
+
+    init(service: HelperService) {
+        self.service = service
+
+        for signalNumber in [SIGTERM, SIGINT] {
+            Darwin.signal(signalNumber, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: queue)
+            source.setEventHandler { [weak self] in
+                self?.stopAndExit()
+            }
+            source.resume()
+            sources.append(source)
+        }
+    }
+
+    private func stopAndExit() {
+        guard !isStopping else { return }
+        isStopping = true
+
+        Task {
+            await service.shutDown()
+            exit(EXIT_SUCCESS)
+        }
+    }
+}

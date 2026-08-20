@@ -57,14 +57,14 @@ public struct ProxyRoute: Hashable, Codable, Sendable, Identifiable {
         self.port = port
     }
 
-    private static func isValidID(_ id: String) -> Bool {
+    public static func isValidID(_ id: String) -> Bool {
         guard (1...32).contains(id.count) else { return false }
         return id.allSatisfy { character in
             character.isASCII && (character.isLetter || character.isNumber || character == "_" || character == "-")
         }
     }
 
-    private static func isValidPort(_ port: Int) -> Bool {
+    public static func isValidPort(_ port: Int) -> Bool {
         (1...65_535).contains(port)
     }
 }
