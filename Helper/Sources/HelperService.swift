@@ -19,9 +19,16 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
               let guestCode
         else { return false }
 
+        // Derived from this daemon's own signature, never a constant. The helper
+        // and the app ship in one bundle and are signed together, so its own
+        // team is exactly the team it should require. An ad hoc build has no
+        // team, and rather than fall back to trusting anyone, it refuses every
+        // client: a local build simply cannot drive the privileged path.
+        guard let team = HelperIdentity.currentTeamIdentifier() else { return false }
+
         var requirement: SecRequirement?
         guard SecRequirementCreateWithString(
-            HelperIdentity.clientRequirement as CFString,
+            HelperIdentity.clientRequirement(team: team) as CFString,
             [],
             &requirement
         ) == errSecSuccess, let requirement else { return false }
@@ -149,8 +156,14 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
         CaddyProcessControl.cleanUpOrphan()
     }
 
+    /// The build number of the app bundle this daemon ships inside.
+    ///
+    /// `Bundle.main` already resolves to the enclosing `.app` for an executable
+    /// under `Contents/MacOS`, so there is nothing to walk. The build number
+    /// rather than the marketing version, because that is what changes on every
+    /// build and so is what tells the app launchd is serving a stale helper.
     private static var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
     }
 
     /// Foundation exposes this Objective-C property to KVC but not to Swift.
@@ -230,7 +243,11 @@ private actor HelperRuntime {
         caddy = nil
         try? FileManager.default.removeItem(at: HelperPaths.pidFile)
         let process = try await supervisor.start(
-            configJSON: config, httpPort: 80, httpsPort: 443, privileged: true
+            configJSON: config,
+            httpPort: 80,
+            httpsPort: 443,
+            privileged: true,
+            signingTeam: HelperIdentity.currentTeamIdentifier()
         )
         guard let snapshot = ProcessInspector().snapshot(pid: process.pid),
               snapshot.executableName == "caddy",

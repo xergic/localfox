@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// The Mach service the root daemon vends, and the launchd label that owns it.
 public enum HelperIdentity {
@@ -6,20 +7,46 @@ public enum HelperIdentity {
     public static let launchdLabel = "net.kandera.localfox.helper"
     public static let plistName = "net.kandera.localfox.helper.plist"
     public static let appBundleIdentifier = "net.kandera.localfox"
-    public static let teamIdentifier = "L36HE29JXS"
 
     /// The code requirement the helper checks every connecting client against.
     ///
     /// A root Mach service that accepts any local peer is a privilege
-    /// escalation, so this is not optional and not configurable at runtime.
-    /// `anchor apple generic` pins it to the real Apple root, and the OU field
-    /// carries the Team ID, so another developer's signed binary cannot connect.
-    public static var clientRequirement: String {
+    /// escalation, so this is not optional. `anchor apple generic` pins it to
+    /// the real Apple root, and the OU field carries the Team ID, so another
+    /// developer's signed binary cannot connect.
+    ///
+    /// The team is passed in rather than written here. A constant in source has
+    /// to be kept in step with whatever identity actually signed the build, and
+    /// when it drifts the boundary either stops working or, worse, trusts the
+    /// wrong team. The helper reads its own.
+    public static func clientRequirement(team: String) -> String {
         """
         anchor apple generic \
         and identifier "\(appBundleIdentifier)" \
-        and certificate leaf[subject.OU] = "\(teamIdentifier)"
+        and certificate leaf[subject.OU] = "\(team)"
         """
+    }
+
+    /// The Team ID that signed the running process.
+    ///
+    /// The helper and the app ship in one bundle and are always signed together,
+    /// so the helper's own team is exactly the team it should require of its
+    /// client. Returns nil for an unsigned or ad hoc signed build, which is what
+    /// a local `make app` produces; the caller decides what to do about that.
+    public static func currentTeamIdentifier() -> String? {
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return nil }
+
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
+              let staticCode else { return nil }
+
+        var information: CFDictionary?
+        let flags = SecCSFlags(rawValue: kSecCSSigningInformation)
+        guard SecCodeCopySigningInformation(staticCode, flags, &information) == errSecSuccess,
+              let details = information as? [String: Any] else { return nil }
+
+        return details[kSecCodeInfoTeamIdentifier as String] as? String
     }
 }
 

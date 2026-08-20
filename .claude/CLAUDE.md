@@ -101,8 +101,14 @@ across that boundary, which is what makes the security model real rather than a
 promise.
 
 **The helper validates its XPC peer before doing anything.** `SecCodeCopyGuestWithAttributes`
-on the connection's audit token, against a requirement pinned to the bundle ID and
-Team ID. A root Mach service without this is a local privilege escalation.
+on the connection's audit token, against a requirement pinned to the bundle ID and the
+Team ID the helper reads from its *own* signature. A root Mach service without this is a
+local privilege escalation.
+
+**No Team ID is written in source.** It is derived at runtime, and supplied to a build
+through `DEVELOPMENT_TEAM`, matching how Portfox keeps it in a CI variable. A constant
+drifts from whatever identity actually signed the build, and a drifted constant either
+breaks the boundary or points it at the wrong team.
 
 **Caddy listens on loopback explicitly.** `":443"` binds every interface and puts every
 dev server on the LAN. It is always `["127.0.0.1:443", "[::1]:443"]`.
