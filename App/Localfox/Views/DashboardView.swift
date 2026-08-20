@@ -141,7 +141,7 @@ struct DashboardContent: View {
                     ServiceDetailPane(service: service, scrolls: scrolls)
                 } else {
                     SetupCard()
-                    EnvironmentCard()
+                    DiagnosticsCard()
                 }
                 Spacer(minLength: 0)
             }
@@ -290,26 +290,20 @@ private struct SetupCard: View {
     }
 }
 
-private struct EnvironmentCard: View {
+/// Collapsed by default. The PATH answers exactly one question, "why was my
+/// command not found", and the failure that raises it now prints the PATH itself,
+/// so this is the second place to look rather than the first thing the window shows.
+private struct DiagnosticsCard: View {
     @Environment(AppState.self) private var state
+    @State private var isExpanded = false
 
     var body: some View {
-        DetailCard(title: "COMMAND ENVIRONMENT", symbol: "terminal") {
+        DetailCard(title: "DIAGNOSTICS", symbol: "stethoscope", isExpanded: $isExpanded) {
             if let environment = state.shellEnvironment {
                 VStack(alignment: .leading, spacing: 8) {
                     LabeledRow(label: "Shell", value: environment.shell)
                     CardDivider()
-                    // Shown because "command not found" is the single most common
-                    // failure, and seeing the PATH turns it into self diagnosis.
-                    Text("PATH")
-                        .font(.lfSection)
-                        .kerning(0.8)
-                        .foregroundStyle(Theme.tertiaryText)
-                    Text(environment.pathEntries.joined(separator: "\n"))
-                        .font(.lfSubtitle)
-                        .foregroundStyle(Theme.secondaryText)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    PathList(entries: environment.pathEntries)
                 }
             } else {
                 Text("Reading your login shell…")
@@ -324,32 +318,58 @@ private struct EnvironmentCard: View {
 struct DetailCard<Content: View>: View {
     let title: String
     var symbol: String?
+    /// When bound, the title row becomes a disclosure and the card collapses to
+    /// its header, for a panel that is only wanted once something has gone wrong.
+    var isExpanded: Binding<Bool>?
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
-                if let symbol {
-                    Image(systemName: symbol).font(.system(size: 9))
+            if let isExpanded {
+                Button { isExpanded.wrappedValue.toggle() } label: {
+                    titleRow(isOpen: isExpanded.wrappedValue)
                 }
-                Text(title).kerning(0.8)
+                .buttonStyle(.plain)
+            } else {
+                titleRow(isOpen: nil)
             }
-            .font(.lfSection)
-            .foregroundStyle(Theme.tertiaryText)
 
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-                        .fill(Theme.card)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-                                .strokeBorder(Theme.border, lineWidth: 1)
-                        )
-                )
+            if isExpanded?.wrappedValue ?? true {
+                cardBody
+            }
         }
+    }
+
+    private func titleRow(isOpen: Bool?) -> some View {
+        HStack(spacing: 5) {
+            if let symbol {
+                Image(systemName: symbol).font(.system(size: 9))
+            }
+            Text(title).kerning(0.8)
+            if let isOpen {
+                Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.lfSection)
+        .foregroundStyle(Theme.tertiaryText)
+        .contentShape(Rectangle())
+    }
+
+    private var cardBody: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                    .fill(Theme.card)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                            .strokeBorder(Theme.border, lineWidth: 1)
+                    )
+            )
     }
 }
 

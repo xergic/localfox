@@ -149,3 +149,22 @@ struct EmptyStateView: View {
         .padding(.horizontal, 20)
     }
 }
+
+/// The PATH Localfox recovered from the login shell.
+struct PathList: View {
+    let entries: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("PATH")
+                .font(.lfSection)
+                .kerning(0.8)
+                .foregroundStyle(Theme.tertiaryText)
+            Text(entries.joined(separator: "\n"))
+                .font(.lfSubtitle)
+                .foregroundStyle(Theme.secondaryText)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}

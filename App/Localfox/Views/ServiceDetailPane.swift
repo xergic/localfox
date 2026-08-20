@@ -46,6 +46,15 @@ struct ServiceDetailPane: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.danger)
                             .fixedSize(horizontal: false, vertical: true)
+                        // Inline rather than a pointer to the diagnostics panel.
+                        // The PATH is the whole answer to this one failure, and
+                        // sending the user somewhere else to read it is a step
+                        // that buys nothing.
+                        if case .commandNotFound = failure.reason,
+                           let environment = state.shellEnvironment {
+                            CardDivider()
+                            PathList(entries: environment.pathEntries)
+                        }
                         if !failure.output.isEmpty {
                             LogText(text: failure.output)
                         }
@@ -128,8 +137,8 @@ struct ServiceDetailPane: View {
             "The command was stopped by signal \(signal)."
         case let .commandNotFound(command):
             """
-            \(command) was not found. Localfox runs commands through your login \
-            shell; check the PATH shown under Command Environment.
+            \(command) was not found on the PATH Localfox recovered from your \
+            login shell.
             """
         case .noPortDiscovered:
             """
