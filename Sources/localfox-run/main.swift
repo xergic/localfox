@@ -15,6 +15,8 @@ enum CLI {
         switch command {
         case "detect":
             await detect(arguments)
+        case "env":
+            await environment(arguments)
         case "help", "--help", "-h":
             usage()
         default:
@@ -27,9 +29,10 @@ enum CLI {
         localfox-run <command>
 
           detect <directory>   Scan a project and print what Localfox would configure
+          env [--no-cache]     Print the environment resolved from your login shell
           help                 This text
 
-        Commands land as their milestones do; `env`, `run` and `up` are not built yet.
+        Commands land as their milestones do; `run` and `up` are not built yet.
         """)
     }
 
@@ -72,6 +75,42 @@ enum CLI {
 
         print("")
         print("Framework detection lands with the detection track.")
+    }
+
+    static func environment(_ arguments: [String]) async {
+        let resolver = ShellEnvironmentResolver()
+        let fresh = arguments.contains("--no-cache")
+
+        let started = ContinuousClock.now
+        var source = "login shell"
+        let environment: ShellEnvironment
+
+        do {
+            environment = fresh ? try await resolver.probe() : try await resolver.resolve()
+        } catch {
+            FileHandle.standardError.write(Data("warning: \(error.localizedDescription)\n".utf8))
+            environment = ShellEnvironmentResolver.fallback()
+            source = "built-in fallback"
+        }
+        let elapsed = ContinuousClock.now - started
+
+        print("shell     \(environment.shell)")
+        print("source    \(source), \(elapsed)")
+        print("PATH")
+        for entry in environment.pathEntries {
+            print("  \(entry)")
+        }
+
+        let interesting = environment.variables
+            .filter { $0.key.hasPrefix("NVM") || $0.key.hasPrefix("VOLTA")
+                || $0.key.hasPrefix("PNPM") || $0.key.hasPrefix("BUN")
+                || $0.key.hasPrefix("MISE") || $0.key.hasPrefix("ASDF")
+                || $0.key == "NODE_OPTIONS" }
+            .sorted { $0.key < $1.key }
+        if !interesting.isEmpty {
+            print("toolchain")
+            for (key, value) in interesting { print("  \(key)=\(value)") }
+        }
     }
 
     static func fail(_ message: String, hint: String) -> Never {
