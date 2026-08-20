@@ -48,6 +48,13 @@ struct DashboardContent: View {
         .sheet(isPresented: $isAddingProject) {
             AddProjectSheet().environment(state)
         }
+        // The helper is approved in System Settings, outside this process, so
+        // returning to Localfox is the only signal that anything changed.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification
+        )) { _ in
+            Task { await state.refreshSetup() }
+        }
     }
 
     private var topBar: some View {
@@ -165,9 +172,71 @@ private struct SetupCard: View {
                         .foregroundStyle(Theme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
+                    actions
+                }
+                if let fingerprint = state.trust.identity?.fingerprint {
+                    CardDivider()
+                    LabeledRow(label: "Fingerprint", value: Self.grouped(fingerprint))
                 }
             }
         }
+    }
+
+    /// One action per state, matching the remedy the state machine reports.
+    @ViewBuilder
+    private var actions: some View {
+        HStack(spacing: 8) {
+            switch state.helper {
+            case .notRegistered:
+                ActionButton(title: "Install Helper", symbol: "arrow.down.circle", isPrimary: true) {
+                    Task { await state.installHelper() }
+                }
+            case .requiresApproval:
+                ActionButton(title: "Approve in System Settings", symbol: "gearshape", isPrimary: true) {
+                    state.openHelperApproval()
+                }
+            case .enabledButUnreachable, .versionMismatch:
+                ActionButton(title: "Reinstall Helper", symbol: "arrow.clockwise", isPrimary: true) {
+                    Task { await state.installHelper() }
+                }
+            case .ready:
+                switch state.trust.remedy {
+                case .install:
+                    ActionButton(title: "Trust Certificate", symbol: "checkmark.seal", isPrimary: true) {
+                        Task { await state.installCertificate() }
+                    }
+                case .reinstall, .repair, .regenerate:
+                    ActionButton(title: "Repair Certificate", symbol: "wrench", isPrimary: true) {
+                        Task { await state.repairCertificate() }
+                    }
+                case .startProxy:
+                    Text("Start a service to create the certificate authority.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.tertiaryText)
+                case .none:
+                    EmptyView()
+                }
+            }
+
+            if state.trust.identity != nil {
+                ActionButton(title: "Remove", tint: Theme.danger) {
+                    Task { await state.removeCertificate() }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 4)
+    }
+
+    /// Grouped in fours, because a user comparing this against Keychain Access
+    /// is reading it a character at a time.
+    static func grouped(_ fingerprint: String) -> String {
+        stride(from: 0, to: fingerprint.count, by: 4).map {
+            let start = fingerprint.index(fingerprint.startIndex, offsetBy: $0)
+            let end = fingerprint.index(start, offsetBy: 4, limitedBy: fingerprint.endIndex)
+                ?? fingerprint.endIndex
+            return String(fingerprint[start..<end]).uppercased()
+        }.joined(separator: " ")
     }
 
     private var helperText: String {

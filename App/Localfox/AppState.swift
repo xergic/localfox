@@ -17,7 +17,8 @@ final class AppState {
     /// store on every poll tick.
     private(set) var statuses: [UUID: ServiceStatus] = [:]
 
-    private(set) var helper: HelperState = .notRegistered
+    /// Owns registration and the XPC channel. Read through `helper`.
+    let helperClient = HelperClient()
     private(set) var trust: RootCAStatus = .notGenerated
     private(set) var shellEnvironment: ShellEnvironment?
     private(set) var lastError: String?
@@ -42,6 +43,8 @@ final class AppState {
             assign(\.lastError, error.localizedDescription)
         }
 
+        await refreshSetup()
+
         // Off the main actor's critical path: a broken rc file can make this
         // take the full timeout, and the project list should draw regardless.
         Task { [resolver] in
@@ -52,6 +55,90 @@ final class AppState {
 
     /// The runtime cannot exist until the shell environment is known, because a
     /// dev command launched with launchd's PATH would not find its own tooling.
+    /// Re-reads helper and certificate state.
+    ///
+    /// Called on launch and whenever the app is brought forward, because the
+    /// user approves the helper in System Settings, outside this process.
+    func refreshSetup() async {
+        await helperClient.refresh()
+        await refreshTrust()
+    }
+
+    private func refreshTrust() async {
+        guard helperClient.state.canServe else {
+            assign(\.trust, .notGenerated)
+            return
+        }
+        do {
+            let pem = try await helperClient.exportRootCA()
+            let host = projects.first?.services.first?.domain.value ?? "localfox.localhost"
+            assign(\.trust, try TrustEvaluator.evaluate(rootPEM: pem, host: host))
+        } catch {
+            assign(\.trust, .notGenerated)
+            assign(\.lastError, error.localizedDescription)
+        }
+    }
+
+    // MARK: - Setup actions
+
+    func installHelper() async {
+        await helperClient.install()
+        await refreshSetup()
+    }
+
+    func openHelperApproval() {
+        helperClient.openApproval()
+    }
+
+    func installCertificate() async {
+        do {
+            try await helperClient.installRootCATrust()
+        } catch {
+            assign(\.lastError, error.localizedDescription)
+        }
+        await refreshTrust()
+    }
+
+    func repairCertificate() async {
+        if case let .stale(installed, _) = trust {
+            try? await helperClient.removeRootCATrust(sha256Hex: installed.fingerprint)
+        }
+        await installCertificate()
+    }
+
+    func removeCertificate() async {
+        guard let identity = trust.identity else { return }
+        do {
+            try await helperClient.removeRootCATrust(sha256Hex: identity.fingerprint)
+        } catch {
+            assign(\.lastError, error.localizedDescription)
+        }
+        await refreshTrust()
+    }
+
+    /// Pushes the current service ports to the proxy. Only running services have
+    /// a port, so a stopped one is simply absent from the table.
+    func syncProxy() async {
+        guard helperClient.state.canServe else { return }
+        var routes: [ProxyRoute] = []
+        for project in projects {
+            for service in project.services {
+                guard let port = status(of: service).port,
+                      let route = ProxyRoute(
+                          id: String(service.id.uuidString.prefix(8)),
+                          domain: service.domain,
+                          port: port
+                      ) else { continue }
+                routes.append(route)
+            }
+        }
+        do {
+            try await helperClient.setRoutes(routes)
+        } catch {
+            assign(\.lastError, error.localizedDescription)
+        }
+    }
+
     private func adopt(_ environment: ShellEnvironment) {
         assign(\.shellEnvironment, environment)
         guard runtime == nil else { return }
@@ -115,6 +202,8 @@ final class AppState {
     func status(of service: Service) -> ServiceStatus {
         statuses[service.id] ?? .stopped
     }
+
+    var helper: HelperState { helperClient.state }
 
     /// The URL to open, which only exists once the proxy is actually serving.
     func url(for service: Service) -> URL? {
@@ -192,6 +281,10 @@ final class AppState {
     func setStatus(_ status: ServiceStatus, for serviceID: UUID) {
         guard statuses[serviceID] != status else { return }
         statuses[serviceID] = status
+        // A newly discovered port is only useful once the proxy knows it.
+        if status.isRunning || status == .stopped {
+            Task { await self.syncProxy() }
+        }
     }
 
     func clearError() {
