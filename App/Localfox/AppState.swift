@@ -229,8 +229,18 @@ final class AppState {
         save(updated)
     }
 
-    func remove(projectID: UUID) {
+    /// Stops first. Once the project is gone there is no row left to reach its
+    /// processes from, and a dev server would outlive the interface that
+    /// started it with no way to stop it short of quitting Localfox.
+    func remove(projectID: UUID) async {
+        guard let project = projects.first(where: { $0.id == projectID }) else { return }
+        await stopAll(project)
         save(projects.filter { $0.id != projectID })
+        for service in project.services {
+            statuses[service.id] = nil
+            logs[service.id] = nil
+        }
+        await syncProxy()
     }
 
     func replace(_ project: Project) {
@@ -280,6 +290,14 @@ final class AppState {
 
     func setStatus(_ status: ServiceStatus, for serviceID: UUID) {
         guard statuses[serviceID] != status else { return }
+        // A stop reported by the runtime lands here after the project it belongs
+        // to was already removed, and would otherwise leave a status keyed to a
+        // service nothing can show. Below the cheap check, because this scan is
+        // linear over every service and the status usually has not moved.
+        guard project(owning: serviceID) != nil else {
+            statuses[serviceID] = nil
+            return
+        }
         statuses[serviceID] = status
         // A newly discovered port is only useful once the proxy knows it.
         if status.isRunning || status == .stopped {

@@ -106,7 +106,12 @@ struct DashboardContent: View {
                 Scrollable(scrolls: scrolls) {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(state.projects) { project in
-                            ProjectSection(project: project, selection: $selection, showsHoverActions: false)
+                            ProjectSection(
+                                project: project,
+                                selection: $selection,
+                                showsHoverActions: false,
+                                showsRemove: true
+                            )
                         }
                     }
                     .padding(10)

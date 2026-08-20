@@ -155,8 +155,12 @@ struct ProjectSection: View {
     /// pane, so it leaves this nil and rows stay unselectable.
     var selection: Binding<UUID?>?
     var showsHoverActions = true
+    /// Dashboard only. The popover is a launcher, and a destructive action one
+    /// mis-click from Start all does not belong in a window that dismisses itself.
+    var showsRemove = false
 
     @Environment(AppState.self) private var state
+    @State private var isConfirmingRemove = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -187,6 +191,11 @@ struct ProjectSection: View {
                 IconButton(symbol: "folder", help: "Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([project.directory])
                 }
+                if showsRemove {
+                    IconButton(symbol: "trash", help: "Remove project") {
+                        isConfirmingRemove = true
+                    }
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -204,6 +213,17 @@ struct ProjectSection: View {
                 )
             }
             .padding(.leading, 7)
+        }
+        .alert("Remove \(project.name)?", isPresented: $isConfirmingRemove) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) {
+                if let selected = selection?.wrappedValue, project.service(id: selected) != nil {
+                    selection?.wrappedValue = nil
+                }
+                Task { await state.remove(projectID: project.id) }
+            }
+        } message: {
+            Text("Localfox forgets this project and its services. Nothing on disk changes.")
         }
     }
 
