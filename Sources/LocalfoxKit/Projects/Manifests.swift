@@ -256,7 +256,7 @@ public enum ManifestReader {
     // MARK: - JSON helpers
 
     private static func readJSONObject(_ url: URL) -> [String: Any]? {
-        guard let data = FileManager.default.contents(atPath: url.path) else { return nil }
+        guard let data = try? ManifestFileSystem.current.data(at: url) else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
@@ -266,14 +266,14 @@ public enum ManifestReader {
     }
 
     private static func directoryEntries(at directory: URL) -> Set<String> {
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return [] }
+        guard let names = try? ManifestFileSystem.current.contentsOfDirectory(at: directory) else { return [] }
         return Set(names)
     }
 
     // MARK: - Text helpers
 
     private static func readText(_ url: URL) -> String? {
-        guard let data = FileManager.default.contents(atPath: url.path) else { return nil }
+        guard let data = try? ManifestFileSystem.current.data(at: url) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 

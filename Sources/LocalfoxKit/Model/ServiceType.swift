@@ -320,4 +320,21 @@ public enum ServiceType: String, CaseIterable, Codable, Sendable {
         default: 3
         }
     }
+
+    public var defaultDevScript: String? {
+        switch self {
+        case .nextJS, .vite, .nuxt, .astro, .svelteKit, .node: "dev"
+        default: nil
+        }
+    }
+
+    public var portFlagStyle: PortFlagStyle {
+        switch self {
+        case .nextJS: .dashP
+        case .vite, .astro, .svelteKit: .doubleDashPort
+        case .nuxt: .environmentNamed
+        case .node: .environmentPORT
+        default: .none
+        }
+    }
 }
