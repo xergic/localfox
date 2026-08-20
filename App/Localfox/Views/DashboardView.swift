@@ -32,6 +32,7 @@ struct DashboardContent: View {
 
     var scrolls = true
     @State private var selection: UUID?
+    @State private var isAddingProject = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,6 +44,9 @@ struct DashboardContent: View {
                 Divider().overlay(Theme.separator)
                 detail
             }
+        }
+        .sheet(isPresented: $isAddingProject) {
+            AddProjectSheet().environment(state)
         }
     }
 
@@ -63,6 +67,13 @@ struct DashboardContent: View {
                 text: "\(state.runningCount) running",
                 tint: state.runningCount > 0 ? Theme.success : nil
             )
+
+            IconButton(
+                symbol: "plus",
+                help: "Add a project",
+                symbolSize: Theme.Metrics.dashboardSymbolSize,
+                frameSize: Theme.Metrics.dashboardButtonSize
+            ) { isAddingProject = true }
         }
         .padding(.horizontal, 14)
         .frame(height: 52)
@@ -71,11 +82,16 @@ struct DashboardContent: View {
     private var sidebar: some View {
         VStack(spacing: 0) {
             if state.projects.isEmpty {
-                EmptyStateView(
-                    symbol: "folder.badge.plus",
-                    message: "No projects yet",
-                    hint: "Add a project directory to get started"
-                )
+                VStack(spacing: 10) {
+                    EmptyStateView(
+                        symbol: "folder.badge.plus",
+                        message: "No projects yet",
+                        hint: "Add a project directory to get started"
+                    )
+                    ActionButton(title: "Add Project", symbol: "plus", isPrimary: true) {
+                        isAddingProject = true
+                    }
+                }
             } else {
                 // scrollDisabled is not enough: ImageRenderer lays out in one
                 // pass and never draws a ScrollView's content at all, which is

@@ -22,8 +22,11 @@ final class AppState {
     private(set) var shellEnvironment: ShellEnvironment?
     private(set) var lastError: String?
 
+    private(set) var logs: [UUID: String] = [:]
+
     private let store: ProjectStore
     private let resolver = ShellEnvironmentResolver()
+    private var runtime: ServiceRuntime?
 
     init(store: ProjectStore = ProjectStore()) {
         self.store = store
@@ -43,8 +46,68 @@ final class AppState {
         // take the full timeout, and the project list should draw regardless.
         Task { [resolver] in
             let resolved = (try? await resolver.resolve()) ?? ShellEnvironmentResolver.fallback()
-            await MainActor.run { self.assign(\.shellEnvironment, resolved) }
+            await MainActor.run { self.adopt(resolved) }
         }
+    }
+
+    /// The runtime cannot exist until the shell environment is known, because a
+    /// dev command launched with launchd's PATH would not find its own tooling.
+    private func adopt(_ environment: ShellEnvironment) {
+        assign(\.shellEnvironment, environment)
+        guard runtime == nil else { return }
+        runtime = ServiceRuntime(
+            shell: environment,
+            onStatus: { [weak self] id, status in
+                Task { @MainActor in self?.setStatus(status, for: id) }
+            },
+            onLog: { [weak self] id in
+                Task { @MainActor in await self?.refreshLog(for: id) }
+            }
+        )
+    }
+
+    // MARK: - Running services
+
+    func start(_ service: Service) async {
+        guard let runtime, let project = project(owning: service.id) else { return }
+        await runtime.start(service, projectName: project.name)
+    }
+
+    func stop(_ service: Service) async {
+        await runtime?.stop(service)
+    }
+
+    func restart(_ service: Service) async {
+        guard let runtime, let project = project(owning: service.id) else { return }
+        await runtime.restart(service, projectName: project.name)
+    }
+
+    func startAll(_ project: Project) async {
+        for service in project.services { await start(service) }
+    }
+
+    func stopAll(_ project: Project) async {
+        for service in project.services { await stop(service) }
+    }
+
+    /// Called when the app is quitting, so no dev server outlives Localfox.
+    func stopEverything() async {
+        await runtime?.stopAll()
+    }
+
+    func log(for service: Service) -> String {
+        logs[service.id] ?? ""
+    }
+
+    private func refreshLog(for id: UUID) async {
+        guard let runtime else { return }
+        let text = await runtime.log(for: id)
+        guard logs[id] != text else { return }
+        logs[id] = text
+    }
+
+    func project(owning serviceID: UUID) -> Project? {
+        projects.first { $0.services.contains { $0.id == serviceID } }
     }
 
     // MARK: - Status

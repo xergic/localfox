@@ -11,7 +11,10 @@ struct LocalfoxApp: App {
         MenuBarExtra {
             MenuView()
                 .environment(state)
-                .task { await state.load() }
+                .task {
+                    AppDelegate.state = state
+                    await state.load()
+                }
         } label: {
             MenuBarLabel(runningCount: state.runningCount)
         }
@@ -56,12 +59,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--verify-runtime") {
+            Task { @MainActor in
+                await SnapshotRenderer.runVerification(state: AppState())
+            }
+            return
+        }
         guard let request = SnapshotRenderer.request else { return }
         // Rendered offscreen and then exits, so no window is ever shown.
         Task { @MainActor in
             await SnapshotRenderer.run(request, state: AppState())
         }
     }
+
+    /// A dev server must never outlive Localfox. Quitting is deferred until the
+    /// process groups are gone, because `NSApplication` would otherwise exit
+    /// while the children are still being signalled.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let state = AppDelegate.state, !isTerminating else { return .terminateNow }
+        isTerminating = true
+        Task { @MainActor in
+            await state.stopEverything()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
+    private var isTerminating = false
+    /// Set by the scene, because the delegate is created before the state is.
+    @MainActor static var state: AppState?
 }
 
 private struct MenuBarLabel: View {

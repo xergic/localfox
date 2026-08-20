@@ -170,6 +170,19 @@ struct ProjectSection: View {
                     .lineLimit(1)
                     .truncationMode(.head)
                 Spacer(minLength: 0)
+
+                if anyRunning {
+                    IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop all") {
+                        Task { await state.stopAll(project) }
+                    }
+                } else {
+                    IconButton(symbol: "play.fill", tint: Theme.success, help: "Start all") {
+                        Task { await state.startAll(project) }
+                    }
+                }
+                IconButton(symbol: "folder", help: "Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([project.directory])
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -207,23 +220,39 @@ struct ServiceRow: View {
                     .font(.lfSubtitle)
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    // Tail, not middle. The subdomain is what distinguishes
+                    // api.wishfox.localhost from admin.wishfox.localhost, and
+                    // middle truncation ate exactly that: "wishfo…calhost".
+                    .truncationMode(.tail)
+                    .help(service.domain.value)
             }
             .layoutPriority(1)
             // Reserved even at rest, so revealing the actions never
             // re-truncates the text or shifts the row under the pointer.
-            .padding(.trailing, Theme.Metrics.rowActionsWidth)
+            .padding(.trailing, reservedActionWidth)
 
             Spacer(minLength: 0)
 
             StatusPill(text: status.label, tint: status.tint)
-                .frame(minWidth: Theme.Metrics.portPillWidth, alignment: .trailing)
+                .fixedSize()
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .overlay(alignment: .trailing) {
             if isHovering || forcesHover {
                 HStack(spacing: 1) {
+                    if status.isRunning {
+                        IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop") {
+                            Task { await state.stop(service) }
+                        }
+                        IconButton(symbol: "arrow.clockwise", help: "Restart") {
+                            Task { await state.restart(service) }
+                        }
+                    } else if !status.isTransitioning {
+                        IconButton(symbol: "play.fill", tint: Theme.success, help: "Start") {
+                            Task { await state.start(service) }
+                        }
+                    }
                     if state.url(for: service) != nil {
                         IconButton(symbol: "globe", help: "Open in browser") {
                             if let url = state.url(for: service) { NSWorkspace.shared.open(url) }
@@ -253,7 +282,48 @@ struct ServiceRow: View {
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
         }
+        .contextMenu { menu }
+        .opacity(status.isTransitioning ? 0.5 : 1)
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        if status.isRunning {
+            Button("Stop") { Task { await state.stop(service) } }
+            Button("Restart") { Task { await state.restart(service) } }
+        } else {
+            Button("Start") { Task { await state.start(service) } }
+        }
+        Divider()
+        if let url = state.url(for: service) {
+            Button("Open in Browser") { NSWorkspace.shared.open(url) }
+            Button("Copy URL") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+            }
+        }
+        Button("Reveal in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([service.directory])
+        }
+        Button("Open in Terminal") {
+            // `open -a` rather than AppleScript, which would need the automation
+            // entitlement and a TCC prompt for a one-line action.
+            NSWorkspace.shared.open(
+                [service.directory],
+                withApplicationAt: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"),
+                configuration: NSWorkspace.OpenConfiguration()
+            )
+        }
+        Divider()
+        Text(service.command)
     }
 
     private var status: ServiceStatus { state.status(of: service) }
+
+    /// A running service shows three actions, a stopped one shows two. Reserving
+    /// the larger width always would cost the domain twenty points of a
+    /// three-hundred point sidebar for nothing.
+    private var reservedActionWidth: CGFloat {
+        status.isRunning ? Theme.Metrics.rowActionsWidth : Theme.Metrics.rowActionsWidth - 20
+    }
 }
