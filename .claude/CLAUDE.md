@@ -43,6 +43,22 @@ PNGs, or build output.
 | `Tests/LocalfoxKitTests/` | Tests for the kit only. The app and helper targets have none. |
 | `Vendor/caddy/` | Pinned upstream Caddy, fetched by `Tools/fetch-caddy.sh`. |
 | `Tools/` | `fetch-caddy.sh`, `fetch-icons.py`, `archive.sh`, `make-dmg.sh`. |
+
+## What is built
+
+`localfox-run` drives the whole pipeline headless:
+
+```sh
+localfox-run detect <dir>            # framework, package manager, command, domains
+localfox-run env                     # the PATH recovered from your login shell
+localfox-run run <dir> -- <cmd>      # spawn a dev server, report the port it bound
+localfox-run caddy-config <h:p>...   # the proxy config Localfox would use
+localfox-run up <h:p>...             # run the proxy on 8080/8443, unprivileged
+```
+
+The app builds and runs as a menu bar agent with a setup wall. The helper compiles
+and is bundled, but registering it needs a Developer ID certificate, so the
+privileged path is not yet exercised end to end.
 | `.github/` | CI on every push, the signed release pipeline on a tag. |
 
 ## Architecture
