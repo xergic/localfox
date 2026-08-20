@@ -54,11 +54,18 @@ public struct PackageManagerDetector: Sendable {
         return json["packageManager"] as? String
     }
 
-    private func ancestors(of directory: URL) -> [URL] {
+    /// Visible to tests so the root stop condition can be checked directly.
+    ///
+    /// Stops at "/" rather than trusting the parent to repeat itself. A URL that
+    /// came from `NSOpenPanel` keeps its `NSURL` bridge, whose
+    /// `deletingLastPathComponent` answers "/.." at the root and grows a new
+    /// "/.." on every turn, so the parent is never equal and the walk never ends.
+    func ancestors(of directory: URL) -> [URL] {
         var result: [URL] = []
         var current = directory.standardizedFileURL
         while true {
             result.append(current)
+            guard current.path != "/" else { return result }
             let parent = current.deletingLastPathComponent()
             guard parent.path != current.path else { return result }
             current = parent

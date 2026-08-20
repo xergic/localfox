@@ -44,4 +44,15 @@ struct PackageManagerDetectorTests {
         #expect(result.packageManager == .pnpm)
         #expect(result.reason == "pnpm-lock.yaml")
     }
+
+    @Test("the walk up stops at the filesystem root for a URL that came from the open panel")
+    func stopsAtTheFilesystemRoot() {
+        // NSOpenPanel hands back a bridged NSURL. Its deletingLastPathComponent
+        // answers "/.." at the root instead of "/" again, so a walk that only
+        // compares against its own parent never terminates.
+        let panelURL = NSURL(fileURLWithPath: "/workspace/apps/web", isDirectory: true) as URL
+        let chain = PackageManagerDetector().ancestors(of: panelURL)
+
+        #expect(chain.map(\.path) == ["/workspace/apps/web", "/workspace/apps", "/workspace", "/"])
+    }
 }
