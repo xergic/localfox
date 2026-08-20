@@ -56,51 +56,41 @@ enum CLI {
             fail("\(url.path) is not a directory", hint: "pass the root of a project")
         }
 
-        let context: DirectoryContext
+        let scan: ProjectScan
         do {
-            context = try DirectoryContext(url: url)
+            scan = try ProjectScanner().scan(directory: url)
         } catch {
-            fail("could not read \(url.path): \(error.localizedDescription)",
-                 hint: "check the directory is readable")
+            fail("could not scan \(url.path): \(error.localizedDescription)",
+                 hint: "check the directory is readable and holds a project")
         }
 
-        let snapshot = context.snapshot
-        let manager = PackageManagerDetector().resolve(in: url)
-        let detection = DetectionEngine().detect(context.detectionContext())
-
-        print(snapshot.name)
-        print("  root      \(snapshot.root.path)  (\(snapshot.rootKind))")
-        if let version = snapshot.version { print("  version   \(version)") }
-
+        print(scan.name)
+        print("  root      \(scan.root.path)")
+        print("  manager   \(scan.packageManager.packageManager.displayName)  (\(scan.packageManager.reason))")
+        if scan.isWorkspace {
+            print("  workspace yes")
+        }
         print("")
-        print("Detected:")
-        if detection.type == .unknown {
-            print("  nothing recognised")
-        } else {
-            print("  \(detection.type.displayName)  (confidence \(Int(detection.confidence * 100))%)")
-            for item in detection.evidence where item.matched {
-                print("    - \(item.description)")
+
+        if scan.candidates.isEmpty {
+            print("No runnable services found.")
+        }
+        for candidate in scan.candidates {
+            let mark = candidate.isSelected ? "x" : " "
+            print("[\(mark)] \(candidate.name)")
+            print("      framework  \(candidate.framework.displayName)  (\(Int(candidate.confidence * 100))%)")
+            for line in candidate.evidence {
+                print("                 - \(line)")
+            }
+            print("      command    \(candidate.command)")
+            print("      domain     \(candidate.domain)\(candidate.isApex ? "  (apex)" : "")")
+            if let port = candidate.expectedPort {
+                print("      port       \(port) expected, discovered at runtime")
             }
         }
-        print("  \(manager.packageManager.displayName)  (\(manager.reason))")
-
-        let script = CommandBuilder.preferredScript(
-            in: snapshot.scripts, framework: detection.type
-        )
-        print("")
-        if let script, let body = snapshot.scripts[script] {
-            print("Command:  \(CommandBuilder.devCommand(manager.packageManager, script: script))")
-            print("            \(script) = \(body)")
-        } else {
-            print("Command:  no dev script in package.json, set one by hand")
-        }
-
-        if let port = detection.type.defaultPorts.first {
-            print("Expected port: \(port)  (a hint, the real port is discovered at runtime)")
-        }
-
-        if let domain = LocalDomain("\(LocalDomain.slug(snapshot.name)).localhost") {
-            print("Domain:   \(domain)")
+        for warning in scan.warnings {
+            print("")
+            print("warning: \(warning)")
         }
     }
 

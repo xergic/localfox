@@ -93,6 +93,10 @@ public struct DirectoryContext: Sendable {
     public let lockfiles: Set<String>
     public let scripts: [String: String]
     public let packageManagerField: String?
+    /// Workspace member patterns, such as `apps/*`. Empty when this is not a
+    /// workspace root. Portfox only needed to know that a root *is* a workspace;
+    /// Localfox has to list the members so it can offer them as services.
+    public let workspaceGlobs: [String]
 
     public init(url: URL, fileSystem: any FileSystemReading = RealFileSystem()) throws {
         guard fileSystem.isDirectory(url) else { throw CocoaError(.fileNoSuchFile) }
@@ -103,6 +107,64 @@ public struct DirectoryContext: Sendable {
             ?? ProjectSnapshot(root: url, serviceDirectory: url, name: url.lastPathComponent, files: entries, rootFiles: entries)
         scripts = snapshot.scripts
         packageManagerField = Self.packageManagerField(at: url, fileSystem: fileSystem)
+        workspaceGlobs = Self.workspaceGlobs(at: url, entries: entries, fileSystem: fileSystem)
+    }
+
+    /// Reads the member patterns from whichever workspace file declares them.
+    static func workspaceGlobs(
+        at url: URL,
+        entries: Set<String>,
+        fileSystem: any FileSystemReading
+    ) -> [String] {
+        for name in ["pnpm-workspace.yaml", "pnpm-workspace.yml"] where entries.contains(name) {
+            if let data = try? fileSystem.data(at: url.appendingPathComponent(name)) {
+                let globs = parsePnpmWorkspace(String(decoding: data, as: UTF8.self))
+                if !globs.isEmpty { return globs }
+            }
+        }
+
+        guard entries.contains("package.json"),
+              let data = try? fileSystem.data(at: url.appendingPathComponent("package.json")),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let workspaces = json["workspaces"] else { return [] }
+
+        // npm and yarn accept both an array and a { packages: [...] } object.
+        if let list = workspaces as? [String] { return list }
+        if let object = workspaces as? [String: Any],
+           let list = object["packages"] as? [String] { return list }
+        return []
+    }
+
+    /// A deliberately small reader for the one shape this file ever has:
+    /// a `packages:` key followed by a list of quoted or bare globs. Parsing
+    /// real YAML would mean a dependency, and this file is never more than this.
+    static func parsePnpmWorkspace(_ text: String) -> [String] {
+        var globs: [String] = []
+        var insidePackages = false
+
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") { continue }
+
+            if line.hasPrefix("packages:") {
+                insidePackages = true
+                continue
+            }
+            guard insidePackages else { continue }
+
+            // Any other top level key ends the list.
+            guard line.hasPrefix("-") else {
+                if rawLine.first?.isWhitespace == false { insidePackages = false }
+                continue
+            }
+
+            var value = line.dropFirst().trimmingCharacters(in: .whitespaces)
+            for quote in ["\"", "'"] where value.hasPrefix(quote) && value.hasSuffix(quote) && value.count >= 2 {
+                value = String(value.dropFirst().dropLast())
+            }
+            if !value.isEmpty { globs.append(value) }
+        }
+        return globs
     }
 
     public func detectionContext() -> DetectionContext {
