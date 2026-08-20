@@ -80,8 +80,9 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           make gen
-          # generic/platform=macOS is what makes this universal. A bare `build`
-          # resolves the destination to the runner's own arch and ships arm64 only.
+          # A bare `build` resolves the destination to the runner's own arch.
+          # `archive -destination generic/platform=macOS` is what produces a
+          # build whose architecture is decided by ARCHS rather than the runner.
           xcodebuild archive \
             -project Localfox.xcodeproj \
             -scheme Localfox \
@@ -115,14 +116,22 @@ jobs:
       - name: Verify the build before notarizing
         run: |
           app="$RUNNER_TEMP/export/Localfox.app"
+          # Localfox is arm64 only. Caddy is 44 MB per slice and macOS 26 supports
+          # almost no Intel hardware, so a second slice doubles the download for a
+          # vanishing audience. The gate is that the build is arm64 and nothing
+          # else, which catches a runner that silently produced the wrong arch.
           archs=$(lipo -archs "$app/Contents/MacOS/Localfox")
           echo "architectures: $archs"
-          for arch in arm64 x86_64; do
-            case " $archs " in
-              *" $arch "*) ;;
-              *) echo "Missing the $arch slice, the build is not universal" >&2; exit 1 ;;
-            esac
-          done
+          if [ "$archs" != "arm64" ]; then
+            echo "Expected an arm64-only build, got: $archs" >&2
+            exit 1
+          fi
+          caddy_archs=$(lipo -archs "$app/Contents/MacOS/caddy")
+          echo "caddy architectures: $caddy_archs"
+          if [ "$caddy_archs" != "arm64" ]; then
+            echo "Expected an arm64-only Caddy, got: $caddy_archs" >&2
+            exit 1
+          fi
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign --display --verbose=4 "$app"
 

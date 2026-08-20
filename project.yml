@@ -42,13 +42,32 @@ targets:
         type: file
         buildPhase: resources
         optional: true
+      # The daemon plist is sealed into the bundle: launchd reads it from
+      # Contents/Library/LaunchDaemons and SMAppService addresses it by filename.
+      - path: App/Localfox/Library/LaunchDaemons/net.kandera.localfox.helper.plist
+        type: file
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchDaemons
+      # Caddy is signed after it lands in the bundle, which is what the copy
+      # phase does. Signing it in place first and copying after invalidates it.
+      - path: Vendor/caddy/caddy
+        type: file
+        buildPhase:
+          copyFiles:
+            destination: executables
+            subpath: ""
     dependencies:
       - package: LocalfoxKit
         product: LocalfoxKit
+      # `copy`, not `copyFiles`: the dependency key is different from the
+      # sources one, and an unknown key is ignored silently, which lands the
+      # helper in Contents/Resources where BundleProgram cannot find it.
       - target: LocalfoxHelper
         embed: true
         codeSign: true
-        copyFiles:
+        copy:
           destination: executables
           subpath: ""
     settings:
@@ -70,21 +89,6 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         COMBINE_HIDPI_IMAGES: YES
         GENERATE_INFOPLIST_FILE: NO
-    # The daemon plist is sealed into the bundle, so launchd reads it from
-    # Contents/Library/LaunchDaemons and SMAppService addresses it by filename.
-    copyFiles:
-      - destination: wrapper
-        subpath: Contents/Library/LaunchDaemons
-        files:
-          - App/Localfox/Library/LaunchDaemons/net.kandera.localfox.helper.plist
-      # Caddy must be signed after it lands in the bundle, which is what
-      # codeSign on the copy phase does. Signing it in place beforehand and
-      # copying afterwards invalidates the signature.
-      - destination: executables
-        subpath: ""
-        codeSign: true
-        files:
-          - Vendor/caddy/caddy
 
   LocalfoxHelper:
     type: tool
