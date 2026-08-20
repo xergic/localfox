@@ -3,6 +3,8 @@ import LocalfoxKit
 
 struct TrustStore: Sendable {
     private static let securityTool = URL(fileURLWithPath: "/usr/bin/security")
+    /// Generous, because adding a root can prompt, but finite.
+    private static let timeout: TimeInterval = 30
     private static let systemKeychain = "/Library/Keychains/System.keychain"
 
     let rootCertificate: URL
@@ -48,7 +50,20 @@ struct TrustStore: Sendable {
         } catch {
             throw TrustStoreError.couldNotRun(error.localizedDescription)
         }
-        process.waitUntilExit()
+
+        // `security` can block indefinitely on a wedged keychain. This runs on
+        // an actor that also serves ping and stopProxy, so waiting forever here
+        // means the XPC reply never fires and every later call queues behind it.
+        let deadline = Date().addingTimeInterval(Self.timeout)
+        while process.isRunning, Date() < deadline {
+            usleep(50_000)
+        }
+        if process.isRunning {
+            process.terminate()
+            usleep(200_000)
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            throw TrustStoreError.timedOut(seconds: Int(Self.timeout))
+        }
 
         let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
         guard process.terminationReason == .exit, process.terminationStatus == 0 else {
@@ -66,6 +81,7 @@ private enum TrustStoreError: LocalizedError {
     case invalidFingerprint
     case couldNotRun(String)
     case securityFailed(status: Int32, message: String)
+    case timedOut(seconds: Int)
 
     var errorDescription: String? {
         switch self {
@@ -75,6 +91,8 @@ private enum TrustStoreError: LocalizedError {
             "Could not run /usr/bin/security: \(message)"
         case let .securityFailed(status, message):
             "/usr/bin/security failed with status \(status): \(message)"
+        case let .timedOut(seconds):
+            "/usr/bin/security did not finish within \(seconds) seconds and was stopped."
         }
     }
 }

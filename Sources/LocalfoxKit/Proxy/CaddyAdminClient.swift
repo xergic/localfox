@@ -8,11 +8,17 @@ public actor CaddyAdminClient {
         case connectionFailed(String)
         case malformedResponse
         case unsuccessfulResponse(status: Int, body: Data)
+        case timedOut(seconds: Int)
     }
 
     private let socketPath: String
 
-    public init(socketPath: String) {
+    /// Bounded because the admin socket is the daemon's only way to reach Caddy,
+    /// and Caddy applying a config is fast when it is healthy at all.
+    private let timeout: Int
+
+    public init(socketPath: String, timeout: Int = 10) {
+        self.timeout = timeout
         self.socketPath = socketPath
     }
 
@@ -37,11 +43,17 @@ public actor CaddyAdminClient {
 
         let connection = NWConnection(to: .unix(path: socketPath), using: .tcp)
         defer { connection.cancel() }
-        try await start(connection)
+
+        // Every step is bounded. A wedged Caddy would otherwise leave the caller
+        // awaiting forever, and in the root daemon that means an XPC reply that
+        // never fires and an actor that never serves another request.
+        try await withTimeout(on: connection) { try await self.start(connection) }
 
         let request = makeRequest(method: method, path: path, body: body)
-        try await send(request, over: connection)
-        let response = try await receiveResponse(from: connection)
+        try await withTimeout(on: connection) { try await self.send(request, over: connection) }
+        let response = try await withTimeout(on: connection) {
+            try await self.receiveResponse(from: connection)
+        }
         guard (200...299).contains(response.status) else {
             throw Error.unsuccessfulResponse(status: response.status, body: response.body)
         }
@@ -59,6 +71,40 @@ public actor CaddyAdminClient {
             ""
         ].joined(separator: "\r\n")
         return Data(headers.utf8) + body
+    }
+
+    /// Races an operation against the clock, cancelling the connection if the
+    /// clock wins.
+    ///
+    /// Cancelling the connection is the part that matters. `NWConnection` resumes
+    /// its handler with a cancelled state, which resumes the continuation the
+    /// operation is blocked on. Cancelling only the task would not: leaving the
+    /// group by throwing implicitly awaits the remaining child, and a
+    /// `withCheckedThrowingContinuation` that nobody resumes never returns, so
+    /// the timeout itself would hang.
+    private func withTimeout<Value: Sendable>(
+        on connection: NWConnection,
+        _ operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let seconds = timeout
+        return try await withThrowingTaskGroup(of: Value?.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled else { return nil }
+                connection.cancel()
+                return nil
+            }
+
+            while let outcome = try await group.next() {
+                guard let value = outcome else { continue }
+                group.cancelAll()
+                return value
+            }
+            // Both finished without a value, which only happens when the timer
+            // cancelled the connection and the operation then failed.
+            throw Error.timedOut(seconds: seconds)
+        }
     }
 
     private func start(_ connection: NWConnection) async throws {

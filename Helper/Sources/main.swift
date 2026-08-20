@@ -3,6 +3,11 @@ import Dispatch
 import Foundation
 import LocalfoxKit
 
+// Everything this daemon creates is root-only unless it says otherwise. Set
+// before any filesystem work, because launchd's inherited umask is not ours to
+// assume and a permissive one would leave the config and pid file writable.
+umask(0o077)
+
 HelperService.cleanUpOrphanedCaddy()
 
 let service = HelperService()

@@ -47,7 +47,7 @@ public struct CaddyLayout: Hashable, Sendable {
         )
         let runtimeRoot = URL(fileURLWithPath: "/var/run/localfox", isDirectory: true)
         return CaddyLayout(
-            binary: bundledBinary(),
+            binary: productionBinary(),
             storageRoot: storageRoot,
             adminSocket: runtimeRoot.appendingPathComponent("caddy.sock"),
             logFile: storageRoot.appendingPathComponent("caddy.log"),
@@ -55,11 +55,22 @@ public struct CaddyLayout: Hashable, Sendable {
         )
     }
 
+    /// The Caddy the root daemon runs. Bundle only, no search and no fallback.
+    ///
+    /// The development lookup must never be reachable from here. `/opt/homebrew/bin`
+    /// is group-writable by `admin` on a normal Mac, so a fallback to a Homebrew
+    /// path would let any admin user place a binary that the daemon then executes
+    /// as root. `Contents/MacOS` is inside the signed, sealed bundle.
+    public static func productionBinary() -> URL {
+        Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/caddy")
+    }
+
     /// Prefers the copy inside the app bundle, falling back to the checked-out
     /// `Vendor/` copy so the CLI works from a source tree.
+    ///
+    /// Unprivileged callers only. `production()` uses `productionBinary()`.
     public static func bundledBinary() -> URL {
-        let inBundle = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/MacOS/caddy")
+        let inBundle = productionBinary()
         if FileManager.default.isExecutableFile(atPath: inBundle.path) { return inBundle }
 
         var directory = URL(fileURLWithPath: CommandLine.arguments.first ?? ".")
@@ -69,12 +80,14 @@ public struct CaddyLayout: Hashable, Sendable {
             if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }
             directory.deleteLastPathComponent()
         }
-        return URL(fileURLWithPath: "/opt/homebrew/bin/caddy")
+        return inBundle
     }
 }
 
 public enum CaddyError: Error, Equatable, Sendable, LocalizedError {
     case binaryMissing(path: String)
+    case binaryNotTrusted(path: String, reason: String)
+    case unsafeDirectory(path: String, reason: String)
     case portUnavailable(port: Int, holder: String?)
     case startFailed(String)
     case didNotBecomeReady(seconds: Int, log: String)
@@ -83,6 +96,10 @@ public enum CaddyError: Error, Equatable, Sendable, LocalizedError {
         switch self {
         case let .binaryMissing(path):
             "The bundled Caddy binary is missing at \(path). Run `make caddy` to fetch it."
+        case let .binaryNotTrusted(path, reason):
+            "Refusing to run \(path) as root: \(reason)."
+        case let .unsafeDirectory(path, reason):
+            "Refusing to use \(path): \(reason)."
         case let .portUnavailable(port, holder):
             if let holder {
                 "Port \(port) is already in use by \(holder). Stop it, then start Localfox again."
@@ -147,22 +164,37 @@ public struct CaddySupervisor: Sendable {
     ///
     /// A file rather than stdin so the exact config that failed is still there to
     /// look at, which is most of debugging a proxy that will not come up.
-    public func start(configJSON: Data, httpPort: Int, httpsPort: Int) async throws -> SpawnedProcess {
+    /// - Parameter privileged: true when this is the root daemon, which turns on
+    ///   the checks that only matter when the caller can be attacked through the
+    ///   filesystem.
+    public func start(
+        configJSON: Data,
+        httpPort: Int,
+        httpsPort: Int,
+        privileged: Bool = false
+    ) async throws -> SpawnedProcess {
         guard FileManager.default.isExecutableFile(atPath: layout.binary.path) else {
             throw CaddyError.binaryMissing(path: layout.binary.path)
+        }
+        if privileged {
+            try Self.assertSafeToExecuteAsRoot(layout.binary)
         }
 
         for port in [httpPort, httpsPort] where !Self.isPortFree(port) {
             throw CaddyError.portUnavailable(port: port, holder: Self.holder(ofPort: port))
         }
 
-        try FileManager.default.createDirectory(
-            at: layout.storageRoot, withIntermediateDirectories: true
-        )
-        try FileManager.default.createDirectory(
-            at: layout.configFile.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
+        // Hardened before the first privileged write, not after. Caddy reads the
+        // config as root, so a redirected or writable directory here would let
+        // someone else choose that config.
+        try Self.prepareDirectory(layout.storageRoot, privileged: privileged)
+        try Self.prepareDirectory(layout.configFile.deletingLastPathComponent(), privileged: privileged)
         try configJSON.write(to: layout.configFile, options: .atomic)
+        if privileged {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: layout.configFile.path
+            )
+        }
 
         // A socket left by a killed Caddy stops the next one binding.
         try? FileManager.default.removeItem(at: layout.adminSocket)
@@ -226,5 +258,89 @@ public struct CaddySupervisor: Sendable {
     public func stop(_ process: SpawnedProcess) async {
         _ = await ProcessSpawner.terminate(group: process.processGroup)
         try? FileManager.default.removeItem(at: layout.adminSocket)
+    }
+}
+
+// MARK: - Filesystem safety
+
+public extension CaddySupervisor {
+    /// Refuses to execute anything that a non-root user could have replaced.
+    ///
+    /// Walks the whole ancestor chain, because a writable *directory* anywhere
+    /// above the binary is enough to swap it, and refuses a symlink outright so
+    /// the path that was checked is the path that runs.
+    static func assertSafeToExecuteAsRoot(_ binary: URL) throws {
+        let manager = FileManager.default
+        let resolved = binary.resolvingSymlinksInPath()
+        guard resolved.path == binary.standardizedFileURL.path else {
+            throw CaddyError.binaryNotTrusted(
+                path: binary.path, reason: "it is a symbolic link"
+            )
+        }
+
+        var url = binary.standardizedFileURL
+        while true {
+            guard let attributes = try? manager.attributesOfItem(atPath: url.path) else { break }
+            let owner = attributes[.ownerAccountID] as? UInt ?? 0
+            let mode = attributes[.posixPermissions] as? Int ?? 0
+
+            if owner != 0 {
+                throw CaddyError.binaryNotTrusted(
+                    path: binary.path, reason: "\(url.path) is not owned by root"
+                )
+            }
+            // Group or world write on any ancestor means someone else can swap it.
+            if mode & 0o022 != 0 {
+                throw CaddyError.binaryNotTrusted(
+                    path: binary.path, reason: "\(url.path) is writable by other users"
+                )
+            }
+            let parent = url.deletingLastPathComponent()
+            if parent.path == url.path { break }
+            url = parent
+        }
+    }
+
+    /// Creates a directory the daemon is about to write into, or proves the one
+    /// that already exists is safe. A symlink is refused rather than followed,
+    /// because following one redirects a privileged write to wherever it points.
+    static func prepareDirectory(_ directory: URL, privileged: Bool) throws {
+        let manager = FileManager.default
+
+        if let attributes = try? manager.attributesOfItem(atPath: directory.path) {
+            guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
+                throw CaddyError.unsafeDirectory(
+                    path: directory.path, reason: "it is a symbolic link"
+                )
+            }
+            guard attributes[.type] as? FileAttributeType == .typeDirectory else {
+                throw CaddyError.unsafeDirectory(
+                    path: directory.path, reason: "it is not a directory"
+                )
+            }
+            guard privileged else { return }
+
+            let owner = attributes[.ownerAccountID] as? UInt ?? 0
+            let mode = attributes[.posixPermissions] as? Int ?? 0
+            guard owner == 0 else {
+                throw CaddyError.unsafeDirectory(
+                    path: directory.path, reason: "it is not owned by root"
+                )
+            }
+            // Tighten rather than refuse: an earlier build may have created this
+            // with the default mode, and failing to start would be unhelpful.
+            if mode & 0o022 != 0 {
+                try? manager.setAttributes(
+                    [.posixPermissions: 0o700], ofItemAtPath: directory.path
+                )
+            }
+            return
+        }
+
+        try manager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: privileged ? [.posixPermissions: 0o700] : nil
+        )
     }
 }
