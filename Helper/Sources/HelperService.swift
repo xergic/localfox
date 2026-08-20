@@ -352,9 +352,32 @@ private enum HelperRuntimeError: LocalizedError {
 private enum CaddyProcessControl {
     static func write(_ record: CaddyPIDRecord) throws {
         let directory = HelperPaths.pidFile.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try prepareRuntimeDirectory(directory)
         let data = try JSONEncoder().encode(record)
         try data.write(to: HelperPaths.pidFile, options: .atomic)
+    }
+
+    /// Creates the runtime directory owned by root and readable by nobody else.
+    ///
+    /// `/var/run` is `root:daemon` with group write, so only root can create
+    /// entries there today. Even so, a directory this daemon writes into as root
+    /// is not left to the default mode, and a pre-existing symlink is refused
+    /// rather than followed, because following one would redirect a privileged
+    /// write to wherever it points.
+    static func prepareRuntimeDirectory(_ directory: URL) throws {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory) {
+            let attributes = try? FileManager.default.attributesOfItem(atPath: directory.path)
+            if attributes?[.type] as? FileAttributeType == .typeSymbolicLink || !isDirectory.boolValue {
+                throw CocoaError(.fileWriteInvalidFileName)
+            }
+            return
+        }
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
     }
 
     static func cleanUpOrphan() {
