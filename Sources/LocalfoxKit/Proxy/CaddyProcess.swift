@@ -39,6 +39,22 @@ public struct CaddyLayout: Hashable, Sendable {
         )
     }
 
+    /// Root-owned layout for the launch daemon.
+    public static func production() -> CaddyLayout {
+        let storageRoot = URL(
+            fileURLWithPath: "/Library/Application Support/Localfox/caddy",
+            isDirectory: true
+        )
+        let runtimeRoot = URL(fileURLWithPath: "/var/run/localfox", isDirectory: true)
+        return CaddyLayout(
+            binary: bundledBinary(),
+            storageRoot: storageRoot,
+            adminSocket: runtimeRoot.appendingPathComponent("caddy.sock"),
+            logFile: storageRoot.appendingPathComponent("caddy.log"),
+            configFile: runtimeRoot.appendingPathComponent("caddy.json")
+        )
+    }
+
     /// Prefers the copy inside the app bundle, falling back to the checked-out
     /// `Vendor/` copy so the CLI works from a source tree.
     public static func bundledBinary() -> URL {
