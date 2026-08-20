@@ -17,6 +17,8 @@ enum CLI {
             await detect(arguments)
         case "env":
             await environment(arguments)
+        case "run":
+            await runService(arguments)
         case "help", "--help", "-h":
             usage()
         default:
@@ -30,9 +32,10 @@ enum CLI {
 
           detect <directory>   Scan a project and print what Localfox would configure
           env [--no-cache]     Print the environment resolved from your login shell
+          run <dir> -- <cmd>   Start a dev command and report the port it binds
           help                 This text
 
-        Commands land as their milestones do; `run` and `up` are not built yet.
+        `up`, which adds the proxy, is not built yet.
         """)
     }
 
@@ -130,6 +133,87 @@ enum CLI {
         if !interesting.isEmpty {
             print("toolchain")
             for (key, value) in interesting { print("  \(key)=\(value)") }
+        }
+    }
+
+    static func runService(_ arguments: [String]) async {
+        guard let separator = arguments.firstIndex(of: "--"),
+              separator > 0, separator + 1 < arguments.count else {
+            fail("run needs a directory and a command",
+                 hint: "localfox-run run ~/Projects/wishfox -- pnpm dev")
+        }
+        let directory = URL(
+            fileURLWithPath: (arguments[0] as NSString).expandingTildeInPath
+        ).standardizedFileURL
+        let command = arguments[(separator + 1)...].joined(separator: " ")
+
+        let resolver = ShellEnvironmentResolver()
+        let shellEnvironment = (try? await resolver.resolve())
+            ?? ShellEnvironmentResolver.fallback()
+
+        var environment = shellEnvironment.variables
+        environment["PATH"] = shellEnvironment.path
+        environment["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
+        environment["LOCALFOX_HOST"] = "dev.localhost"
+
+        let request = SpawnRequest.devCommand(
+            command, in: directory, shell: shellEnvironment.shell, environment: environment
+        )
+
+        let process: SpawnedProcess
+        do {
+            process = try ProcessSpawner.spawn(request)
+        } catch {
+            fail("could not start: \(error.localizedDescription)", hint: "check the command")
+        }
+
+        print("spawned pid \(process.pid), process group \(process.processGroup)")
+        streamOutput(process)
+
+        // Ctrl-C must tear down the tree, not orphan it.
+        let group = process.processGroup
+        signal(SIGINT, SIG_IGN)
+        let interrupt = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+        interrupt.setEventHandler {
+            Task {
+                print("\nstopping process group \(group)")
+                let outcome = await ProcessSpawner.terminate(group: group)
+                print("stopped: \(outcome)")
+                exit(0)
+            }
+        }
+        interrupt.resume()
+
+        do {
+            let listener = try await PortDiscovery().waitForPort(
+                group: process.processGroup,
+                expected: nil,
+                confirm: { await PortDiscovery.confirmHTTP($0, host: "dev.localhost") }
+            )
+            print("discovered \(listener.family) port \(listener.port), confirmed HTTP")
+            if listener.bindsAllInterfaces {
+                print("warning: bound to all interfaces, so it is already reachable from your LAN")
+            }
+            print("would proxy https://dev.localhost -> 127.0.0.1:\(listener.port)")
+        } catch {
+            FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
+        }
+
+        print("running. press ctrl-c to stop.")
+        while true { try? await Task.sleep(for: .seconds(3600)) }
+    }
+
+    /// Drains both pipes so a chatty dev server never blocks on a full buffer.
+    static func streamOutput(_ process: SpawnedProcess) {
+        for (handle, prefix) in [(process.standardOutput, "out"), (process.standardError, "err")] {
+            handle.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                let text = String(decoding: data, as: UTF8.self)
+                for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+                    print("  [\(prefix)] \(line)")
+                }
+            }
         }
     }
 
