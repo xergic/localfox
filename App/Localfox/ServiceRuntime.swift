@@ -154,6 +154,11 @@ actor ServiceRuntime {
                     expected: service.portMode.fixedValue ?? service.expectedPort,
                     confirm: { await PortDiscovery.confirmHTTP($0, host: service.domain.value) }
                 )
+                // Same check the failure branch makes. A port can confirm just as
+                // stop() tears the process down, and reporting .running then
+                // leaves the interface showing a dead server and pushes a proxy
+                // route to a port nothing is listening on.
+                guard await self?.isRunning(service.id) == true else { return }
                 await self?.report(
                     .running(pid: process.pid, port: listener.port), for: service.id
                 )
