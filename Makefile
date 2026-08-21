@@ -1,4 +1,10 @@
 .DEFAULT_GOAL := help
+
+# Per-repo settings, git-ignored. Make is not a shell: write DEVELOPMENT_TEAM=ABCDE12345
+# with no quotes, or the quote characters end up inside the value and signing fails.
+-include .env
+export
+
 SCHEME := Localfox
 PROJECT := Localfox.xcodeproj
 CONFIG := Debug

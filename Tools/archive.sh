@@ -24,6 +24,16 @@ fi
 # Monotonic without a CI run number to borrow, which is what CFBundleVersion needs.
 build=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
+team=${DEVELOPMENT_TEAM:-}
+# A Team ID is ten alphanumerics. Catching a stray quote here, which is what
+# `DEVELOPMENT_TEAM="X"` in a .env produces, beats a codesign error that names
+# the identity rather than the reason.
+if [ -n "$team" ] && ! [[ "$team" =~ ^[A-Z0-9]{10}$ ]]; then
+  echo "DEVELOPMENT_TEAM is '$team', which is not a ten-character Team ID." >&2
+  echo "In .env write it without quotes: DEVELOPMENT_TEAM=ABCDE12345" >&2
+  exit 1
+fi
+
 out=dist
 archive="$out/Localfox.xcarchive"
 app="$out/Localfox.app"
@@ -35,7 +45,6 @@ make gen
 
 # archive with a generic destination, never build. `xcodebuild build` resolves
 # the destination to this Mac's own arch and silently ships a single slice.
-team=${DEVELOPMENT_TEAM:-}
 signing=(CODE_SIGN_IDENTITY="-" CODE_SIGNING_ALLOWED=YES)
 if [ -n "$team" ]; then
   signing=(

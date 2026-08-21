@@ -20,8 +20,20 @@ make lint     # SwiftLint, must stay clean
 make gen      # regenerate Localfox.xcodeproj from project.yml
 make caddy    # fetch and verify the pinned Caddy binary into Vendor/
 make snapshot # render the popover and dashboard to snapshots/
-make archive  # ad hoc signed Release app and DMG into dist/
+make archive  # Release app and DMG into dist/
 ```
+
+The Makefile does `-include .env` and `export`, so per-repo settings live in a
+git-ignored `.env`. See `.env.example`. Make is not a shell, so values take no
+quotes: `DEVELOPMENT_TEAM="X"` keeps the quote characters inside the value, which
+is why `Tools/archive.sh` validates the shape before it does any work.
+
+`make archive` is ad hoc signed by default, and an ad hoc build **can never
+register a working helper**: the signature carries no Team ID, so
+`HelperIdentity.currentTeamIdentifier()` returns nil and `HelperService` refuses
+every XPC peer. Set `DEVELOPMENT_TEAM` to sign with an Apple Development identity
+and install to `/Applications`, which is the only way to exercise the privileged
+path locally. Developer ID stays required for distribution, via CI.
 
 Run `make lint` and `make test` after every code change. Run `make snapshot` after a
 UI change and look at the PNGs.
