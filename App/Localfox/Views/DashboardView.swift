@@ -177,6 +177,13 @@ private struct SetupCard: View {
                         .foregroundStyle(Theme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
+                    if let blocker = HelperIdentity.registrationBlocker() {
+                        CardDivider()
+                        Label(blocker.message, systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.accent)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     actions
                 }
                 if let fingerprint = state.trust.identity?.fingerprint {
@@ -202,7 +209,7 @@ private struct SetupCard: View {
                 }
             case .enabledButUnreachable, .versionMismatch:
                 ActionButton(title: "Reinstall Helper", symbol: "arrow.clockwise", isPrimary: true) {
-                    Task { await state.installHelper() }
+                    Task { await state.reinstallHelper() }
                 }
             case .ready:
                 switch state.trust.remedy {

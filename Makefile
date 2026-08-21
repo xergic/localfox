@@ -36,9 +36,11 @@ run: app ## Build and launch the menu bar app
 
 # The daemon plist is sealed into the bundle, so launchd keeps serving the old
 # one until the service is unregistered. Printing first shows what it actually has.
-reinstall-helper: ## Show launchd's view of the helper, then force a re-registration
+reinstall-helper: ## Show launchd's view of the helper, then clear the registration
 	@launchctl print system/$(HELPER_LABEL) 2>&1 | head -20 || true
-	@echo "--- unregister via the app's Settings, then relaunch to re-register ---"
+	@echo "--- booting out $(HELPER_LABEL) ---"
+	@sudo launchctl bootout system/$(HELPER_LABEL) 2>&1 || true
+	@echo "--- relaunch Localfox from /Applications to re-register ---"
 
 snapshot: app ## Render the popover and dashboard to snapshots/
 	@mkdir -p snapshots
@@ -46,7 +48,7 @@ snapshot: app ## Render the popover and dashboard to snapshots/
 	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot snapshots/popover-hover.png --hover
 	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot-dashboard snapshots/dashboard.png
 
-archive: ## Build an ad hoc signed Release app and DMG into dist/
+archive: ## Build a Release app and DMG into dist/ (DEVELOPMENT_TEAM=... to sign)
 	@Tools/archive.sh $(VERSION)
 
 lint: ## Run SwiftLint

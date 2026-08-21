@@ -48,6 +48,45 @@ public enum HelperIdentity {
 
         return details[kSecCodeInfoTeamIdentifier as String] as? String
     }
+
+    /// Why `SMAppService.daemon` registration cannot succeed for this build.
+    ///
+    /// Checked before registering rather than after failing, because launchd
+    /// reports `kSMErrorAlreadyRegistered` for a stale registration and nothing
+    /// at all for a build it will never accept. Both look identical to a user
+    /// pressing a button that does nothing.
+    public enum RegistrationBlocker: Hashable, Sendable {
+        /// launchd resolves `BundleProgram` against the registering bundle, so a
+        /// daemon can only be registered from an app installed in /Applications.
+        case notInApplications(String)
+        /// An ad hoc signature carries no Team ID, so `clientRequirement` cannot
+        /// be built and `HelperService` would refuse every connection anyway.
+        case noTeamIdentifier
+
+        public var message: String {
+            switch self {
+            case let .notInApplications(path):
+                "Localfox is running from \(path). macOS only registers a privileged "
+                    + "helper for an app in /Applications. Move Localfox there, then reopen it."
+            case .noTeamIdentifier:
+                "This build is ad hoc signed and carries no Team ID, so its helper would "
+                    + "refuse every connection. Sign it with a development or Developer ID identity."
+            }
+        }
+    }
+
+    /// Injectable so both branches are testable without moving the test bundle.
+    public static func registrationBlocker(
+        bundleURL: URL = Bundle.main.bundleURL,
+        teamIdentifier: String? = currentTeamIdentifier()
+    ) -> RegistrationBlocker? {
+        let path = bundleURL.resolvingSymlinksInPath().path
+        guard path.hasPrefix("/Applications/") else {
+            return .notInApplications(bundleURL.deletingLastPathComponent().path)
+        }
+        guard teamIdentifier != nil else { return .noTeamIdentifier }
+        return nil
+    }
 }
 
 /// The API the unprivileged app may invoke on the root daemon.

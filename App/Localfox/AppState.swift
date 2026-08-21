@@ -71,19 +71,57 @@ final class AppState {
         }
         do {
             let pem = try await helperClient.exportRootCA()
-            let host = projects.first?.services.first?.domain.value ?? "localfox.localhost"
-            assign(\.trust, try TrustEvaluator.evaluate(rootPEM: pem, host: host))
+            let host = trustProbeHost
+            // Caddy only holds a certificate for a domain that is in its route
+            // table, so before anything runs there is no leaf and the evaluation
+            // falls back to the root on its own.
+            let leaf = await ProxyLeafFetcher.leaf(for: host)
+            assign(\.trust, try TrustEvaluator.evaluate(rootPEM: pem, issuedLeaf: leaf, host: host))
         } catch {
             assign(\.trust, .notGenerated)
             assign(\.lastError, error.localizedDescription)
         }
     }
 
+    /// Prefers a running service, because that is the only host the proxy has
+    /// actually been asked to issue for.
+    private var trustProbeHost: String {
+        let running = projects
+            .flatMap(\.services)
+            .first { status(of: $0).isRunning }
+        return running?.domain.value
+            ?? projects.first?.services.first?.domain.value
+            ?? "localfox.localhost"
+    }
+
     // MARK: - Setup actions
 
     func installHelper() async {
         await helperClient.install()
+        await finishSetupAction()
+    }
+
+    /// The button the wall shows once the daemon is registered but silent.
+    ///
+    /// `install()` cannot fix that state: launchd answers `kSMErrorAlreadyRegistered`
+    /// and keeps serving the sealed plist and the binary it already has. Only the
+    /// unregister/register cycle replaces them.
+    func reinstallHelper() async {
+        await helperClient.reinstall()
+        await finishSetupAction()
+    }
+
+    /// Helper failures are reported on `helperClient.lastError`, which no view
+    /// reads, so a registration that fails looks exactly like one that worked.
+    ///
+    /// Trust is installed here rather than behind a second button: by the time
+    /// the helper answers, the user has already agreed to the privileged part,
+    /// and a working helper with an untrusted CA still shows a browser warning.
+    private func finishSetupAction() async {
         await refreshSetup()
+        assign(\.lastError, helperClient.lastError)
+        guard helperClient.state.canServe, trust.remedy == .install else { return }
+        await installCertificate()
     }
 
     func openHelperApproval() {

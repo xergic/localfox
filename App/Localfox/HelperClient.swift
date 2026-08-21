@@ -17,12 +17,22 @@ final class HelperClient {
     }
 
     func install() async {
+        if let blocker = HelperIdentity.registrationBlocker() {
+            assignError(blocker.message)
+            await refresh()
+            assignError(blocker.message)
+            return
+        }
         var failureMessage: String?
         do {
             try service.register()
             assignError(nil)
         } catch where Self.isAlreadyRegistered(error) {
-            assignError(nil)
+            // Already registered means the stale copy is still loaded, which is
+            // what `reinstall()` exists to clear. Say so rather than reporting
+            // success and leaving the user pressing a button that does nothing.
+            failureMessage = "The helper is already registered. Use Reinstall Helper to replace it."
+            assignError(failureMessage)
         } catch {
             failureMessage =
                 "Localfox could not register its helper. Move Localfox to Applications, then try again. "
@@ -50,6 +60,12 @@ final class HelperClient {
     }
 
     func reinstall() async {
+        if let blocker = HelperIdentity.registrationBlocker() {
+            assignError(blocker.message)
+            await refresh()
+            assignError(blocker.message)
+            return
+        }
         var failureMessage: String?
         do {
             try await service.unregister()
@@ -89,6 +105,10 @@ final class HelperClient {
                 assignState(.ready(version: response.version, caddyRunning: response.caddyRunning))
             } catch {
                 assignState(.enabledButUnreachable)
+                // The XPC rejection reason is the single most useful diagnostic
+                // here, and discarding it leaves the wall saying "Not responding"
+                // with nothing to act on.
+                assignError(Self.unreachableMessage(error))
             }
         @unknown default:
             tearDownConnection()
@@ -287,6 +307,15 @@ final class HelperClient {
     private static func isAlreadyRegistered(_ error: any Error) -> Bool {
         let error = error as NSError
         return error.domain == SMAppServiceErrorDomain && error.code == kSMErrorAlreadyRegistered
+    }
+
+    /// A registered-but-silent helper is almost always a stale copy launchd is
+    /// still serving, or a build whose Team ID the helper refuses. Naming the
+    /// likely cause beats repeating the XPC error on its own.
+    private static func unreachableMessage(_ error: any Error) -> String {
+        if let blocker = HelperIdentity.registrationBlocker() { return blocker.message }
+        return "The helper is registered but not answering. Use Reinstall Helper to replace the copy "
+            + "launchd is still holding. \(message(for: error))"
     }
 
     private static func message(for error: any Error) -> String {
