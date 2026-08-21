@@ -19,6 +19,11 @@ final class AppState {
 
     /// Owns registration and the XPC channel. Read through `helper`.
     let helperClient = HelperClient()
+    let appearance = Appearance()
+
+    /// Held here rather than in the dashboard's own state, because the popover
+    /// asks for the sheet on a window that does not exist yet.
+    var presentsPreferences = false
     private(set) var trust: RootCAStatus = .notGenerated
     private(set) var shellEnvironment: ShellEnvironment?
     private(set) var lastError: String?
@@ -455,7 +460,7 @@ extension ServiceStatus {
     var tint: Color {
         switch self {
         case .running: Theme.success
-        case .starting, .stopping: Theme.accent
+        case .starting, .stopping: Theme.accentText
         case .failed: Theme.danger
         case .stopped: Theme.secondaryText
         }

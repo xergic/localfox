@@ -69,7 +69,7 @@ struct EditProjectSheet: View {
         }
         .frame(width: 620, height: 560)
         .background(Theme.background)
-        .environment(\.colorScheme, .dark)
+        .themedSurface(state.appearance.colorScheme)
         .alert("Restart to use the new domain?", isPresented: $isConfirmingRestart) {
             Button("Not Now", role: .cancel) { dismiss() }
             Button("Restart") {

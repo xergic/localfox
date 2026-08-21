@@ -5,22 +5,33 @@ import SwiftUI
 /// The main window. Chrome only; everything renderable lives in `DashboardContent`.
 struct DashboardView: View {
     @Environment(AppState.self) private var state
+    @State private var window: NSWindow?
 
     var body: some View {
         DashboardContent()
             .background(Theme.background)
-            .environment(\.colorScheme, .dark)
+            .themedSurface(state.appearance.colorScheme)
             .background(WindowAccessor(onAttach: attach))
+            // `attach` runs once per window, so a preference flipped while the
+            // dashboard is open would leave the AppKit chrome on the old theme.
+            .onChange(of: state.appearance.colorScheme) {
+                if let window { applyAppearance(to: window) }
+            }
     }
 
     private func attach(_ window: NSWindow) {
+        self.window = window
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
-        // The window is drawn dark by SwiftUI, but its own background flashes
-        // light during a resize without this.
-        window.appearance = NSAppearance(named: .darkAqua)
-        window.backgroundColor = NSColor(Theme.background)
         window.isRestorable = false
+        applyAppearance(to: window)
+    }
+
+    /// The window is drawn by SwiftUI, but its own background flashes the other
+    /// theme during a resize without this.
+    private func applyAppearance(to window: NSWindow) {
+        window.appearance = state.appearance.nsAppearance
+        window.backgroundColor = NSColor(Theme.background)
     }
 }
 
@@ -35,6 +46,8 @@ struct DashboardContent: View {
     @State private var isAddingProject = false
 
     var body: some View {
+        @Bindable var state = state
+
         VStack(spacing: 0) {
             topBar
             Divider().overlay(Theme.separator)
@@ -47,6 +60,9 @@ struct DashboardContent: View {
         }
         .sheet(isPresented: $isAddingProject) {
             AddProjectSheet().environment(state)
+        }
+        .sheet(isPresented: $state.presentsPreferences) {
+            PreferencesSheet().environment(state)
         }
         // The helper is approved in System Settings, outside this process, so
         // returning to Localfox is the only signal that anything changed.
@@ -63,7 +79,7 @@ struct DashboardContent: View {
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: 20, height: 20)
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(Theme.accentText)
             Text("Localfox")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(Theme.primaryText)
@@ -81,6 +97,13 @@ struct DashboardContent: View {
                 symbolSize: Theme.Metrics.dashboardSymbolSize,
                 frameSize: Theme.Metrics.dashboardButtonSize
             ) { isAddingProject = true }
+
+            IconButton(
+                symbol: "gearshape",
+                help: "Preferences",
+                symbolSize: Theme.Metrics.dashboardSymbolSize,
+                frameSize: Theme.Metrics.dashboardButtonSize
+            ) { state.presentsPreferences = true }
         }
         .padding(.horizontal, 14)
         .frame(height: 52)
@@ -182,7 +205,7 @@ private struct SetupCard: View {
                         CardDivider()
                         Label(blocker.message, systemImage: "exclamationmark.triangle")
                             .font(.system(size: 11))
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.accentText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     actions
@@ -263,7 +286,7 @@ private struct SetupCard: View {
     }
 
     private var helperTint: Color {
-        state.helper.canServe ? Theme.success : Theme.accent
+        state.helper.canServe ? Theme.success : Theme.accentText
     }
 
     private var trustText: String {
@@ -278,7 +301,7 @@ private struct SetupCard: View {
     }
 
     private var trustTint: Color {
-        state.trust.isUsable ? Theme.success : Theme.accent
+        state.trust.isUsable ? Theme.success : Theme.accentText
     }
 
     /// Localfox has no unprivileged fallback, so this explains the wall rather

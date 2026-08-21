@@ -33,9 +33,7 @@ struct MenuView: View {
         }
         .frame(width: Theme.Metrics.popoverWidth)
         .background(Theme.background)
-        // Not preferredColorScheme, which is a scene preference and no-ops
-        // under ImageRenderer, so a snapshot would come out light.
-        .environment(\.colorScheme, .dark)
+        .themedSurface(state.appearance.colorScheme)
     }
 
     private var header: some View {
@@ -44,7 +42,7 @@ struct MenuView: View {
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: 19, height: 19)
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(Theme.accentText)
 
             Text("Localfox")
                 .font(.system(size: 15, weight: .bold))
@@ -71,7 +69,7 @@ struct MenuView: View {
         VStack(spacing: 10) {
             Image(systemName: "lock.shield")
                 .font(.system(size: 24))
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(Theme.accentText)
             Text("Finish setting up local HTTPS")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.primaryText)
@@ -113,6 +111,12 @@ struct MenuView: View {
         HStack(spacing: 12) {
             FooterButton(symbol: "macwindow", title: "Localfox") {
                 WindowPresenter.showDashboard(openWindow)
+            }
+            FooterButton(symbol: "slider.horizontal.3", title: "Settings…") {
+                // Requested before the window has laid out, which is why the flag
+                // lives on `AppState` rather than in the dashboard's own state.
+                WindowPresenter.showDashboard(openWindow)
+                state.presentsPreferences = true
             }
             Spacer(minLength: 0)
             Button("Quit") { NSApplication.shared.terminate(nil) }

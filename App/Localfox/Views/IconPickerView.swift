@@ -41,7 +41,6 @@ struct IconPickerView: View {
         }
         .frame(width: 296)
         .background(Theme.background)
-        .environment(\.colorScheme, .dark)
     }
 
     private var gridHeight: CGFloat {

@@ -45,7 +45,7 @@ struct AddProjectSheet: View {
         }
         .frame(width: 620, height: 560)
         .background(Theme.background)
-        .environment(\.colorScheme, .dark)
+        .themedSurface(state.appearance.colorScheme)
     }
 
     private var header: some View {
@@ -56,7 +56,7 @@ struct AddProjectSheet: View {
                 .overlay(
                     Image(systemName: "folder.badge.plus")
                         .font(.system(size: 15))
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(Theme.accentText)
                 )
             VStack(alignment: .leading, spacing: 1) {
                 Text("Add a project")

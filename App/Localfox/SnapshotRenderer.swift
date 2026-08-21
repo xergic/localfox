@@ -6,12 +6,14 @@ import SwiftUI
 /// Renders a surface to a PNG and exits, so the design can be reviewed without
 /// Screen Recording permission and without hand-driving the menu bar.
 ///
-/// Usage: `Localfox --snapshot out.png [--hover]`, `--snapshot-dashboard out.png`.
+/// Usage: `Localfox --snapshot out.png [--hover] [--light]`, `--snapshot-dashboard out.png`
+/// or `--snapshot-prefs out.png`.
 @MainActor
 enum SnapshotRenderer {
     enum Surface: String, CaseIterable {
         case popover = "--snapshot"
         case dashboard = "--snapshot-dashboard"
+        case preferences = "--snapshot-prefs"
     }
 
     /// Drives the app's own runtime headlessly and prints what happened.
@@ -171,6 +173,7 @@ enum SnapshotRenderer {
     static var requestedPath: String? { request?.path }
 
     static func run(_ request: Request, state: AppState) async {
+        if CommandLine.arguments.contains("--light") { state.appearance.force(.light) }
         await state.load()
 
         let renderer = ImageRenderer(content: content(for: request.surface, state: state))
@@ -203,13 +206,15 @@ enum SnapshotRenderer {
         case .popover:
             MenuView(scrolls: false, forcesHover: CommandLine.arguments.contains("--hover"))
                 .environment(state)
-                .environment(\.colorScheme, .dark)
         case .dashboard:
             DashboardContent(scrolls: false)
                 .environment(state)
                 .frame(width: Theme.Metrics.dashboardWidth, height: Theme.Metrics.dashboardHeight)
                 .background(Theme.background)
-                .environment(\.colorScheme, .dark)
+                .themedSurface(state.appearance.colorScheme)
+        case .preferences:
+            PreferencesSheet(scrolls: false)
+                .environment(state)
         }
     }
 }

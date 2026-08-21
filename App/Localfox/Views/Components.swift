@@ -80,7 +80,7 @@ struct ActionButton: View {
                 }
                 Text(title).font(.system(size: 12, weight: .medium))
             }
-            .foregroundStyle(isPrimary ? Theme.background : tint)
+            .foregroundStyle(isPrimary ? Theme.onAccent : tint)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
