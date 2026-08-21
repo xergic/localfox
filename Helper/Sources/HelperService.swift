@@ -230,8 +230,8 @@ private actor HelperRuntime {
             storageRoot: layout.storageRoot.path,
             logPath: layout.logFile.path,
             adminSocketPath: layout.adminSocket.path,
-            caID: HelperPaths.caID,
-            caName: "Localfox Local Authority"
+            caID: layout.caID,
+            caName: layout.caName
         )
         let config = try CaddyConfigBuilder(options: options).build(routes: routes)
 
@@ -348,10 +348,9 @@ private struct CaddyPIDRecord: Codable, Sendable {
 }
 
 private enum HelperPaths {
-    static let caID = "localfox"
+    static let caID = CaddyLayout.production().caID
     static let pidFile = URL(fileURLWithPath: "/var/run/localfox/caddy.pid")
-    static let rootCertificate = CaddyLayout.production().storageRoot
-        .appendingPathComponent("pki/authorities/\(caID)/root.crt")
+    static let rootCertificate = CaddyLayout.production().rootCertificate
 }
 
 private enum HelperRuntimeError: LocalizedError {

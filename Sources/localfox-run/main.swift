@@ -211,8 +211,8 @@ enum CLI {
             storageRoot: layout.storageRoot.path,
             logPath: layout.logFile.path,
             adminSocketPath: layout.adminSocket.path,
-            caID: "localfox",
-            caName: "Localfox Local Authority"
+            caID: layout.caID,
+            caName: layout.caName
         ))
         do {
             FileHandle.standardOutput.write(try builder.build(routes: parseRoutes(arguments)))
@@ -233,8 +233,8 @@ enum CLI {
             storageRoot: layout.storageRoot.path,
             logPath: layout.logFile.path,
             adminSocketPath: layout.adminSocket.path,
-            caID: "localfox",
-            caName: "Localfox Local Authority"
+            caID: layout.caID,
+            caName: layout.caName
         )
 
         let config: Data

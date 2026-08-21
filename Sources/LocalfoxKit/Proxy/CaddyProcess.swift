@@ -13,13 +13,34 @@ public struct CaddyLayout: Hashable, Sendable {
     public let adminSocket: URL
     public let logFile: URL
     public let configFile: URL
+    /// The CA identity belongs to the layout, because the authority is generated
+    /// into `storageRoot`. Two layouts sharing an id produce two CAs with one
+    /// subject name and different keys, which no fingerprint check can untangle
+    /// once a user has trusted the wrong one.
+    public let caID: String
+    public let caName: String
 
-    public init(binary: URL, storageRoot: URL, adminSocket: URL, logFile: URL, configFile: URL) {
+    public init(
+        binary: URL,
+        storageRoot: URL,
+        adminSocket: URL,
+        logFile: URL,
+        configFile: URL,
+        caID: String,
+        caName: String
+    ) {
         self.binary = binary
         self.storageRoot = storageRoot
         self.adminSocket = adminSocket
         self.logFile = logFile
         self.configFile = configFile
+        self.caID = caID
+        self.caName = caName
+    }
+
+    /// Where this layout's generated root certificate lands.
+    public var rootCertificate: URL {
+        storageRoot.appendingPathComponent("pki/authorities/\(caID)/root.crt")
     }
 
     /// Unprivileged layout for `localfox-run`, entirely under Application Support.
@@ -36,7 +57,9 @@ public struct CaddyLayout: Hashable, Sendable {
             storageRoot: base.appendingPathComponent("caddy", isDirectory: true),
             adminSocket: URL(fileURLWithPath: "/tmp/localfox-admin-\(getuid()).sock"),
             logFile: base.appendingPathComponent("caddy.log"),
-            configFile: base.appendingPathComponent("caddy.json")
+            configFile: base.appendingPathComponent("caddy.json"),
+            caID: "localfox-dev",
+            caName: "Localfox Development Authority"
         )
     }
 
@@ -52,7 +75,9 @@ public struct CaddyLayout: Hashable, Sendable {
             storageRoot: storageRoot,
             adminSocket: runtimeRoot.appendingPathComponent("caddy.sock"),
             logFile: storageRoot.appendingPathComponent("caddy.log"),
-            configFile: runtimeRoot.appendingPathComponent("caddy.json")
+            configFile: runtimeRoot.appendingPathComponent("caddy.json"),
+            caID: "localfox",
+            caName: "Localfox Local Authority"
         )
     }
 
