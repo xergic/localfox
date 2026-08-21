@@ -78,10 +78,23 @@ final class AppState {
             // falls back to the root on its own.
             let leaf = await ProxyLeafFetcher.leaf(for: host)
             assign(\.trust, try TrustEvaluator.evaluate(rootPEM: pem, issuedLeaf: leaf, host: host))
+            if let pem { cacheRootForDevServers(pem) }
         } catch {
             assign(\.trust, .notGenerated)
             assign(\.lastError, error.localizedDescription)
         }
+    }
+
+    /// Node, Bun and Deno ignore the system trust store and read a PEM from a
+    /// path, but the daemon keeps its own copy in a root-owned 0700 directory.
+    /// This is the only copy a dev server can actually open.
+    private func cacheRootForDevServers(_ pem: Data) {
+        let destination = CaddyLayout.userReadableRoot
+        guard (try? Data(contentsOf: destination)) != pem else { return }
+        try? FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try? pem.write(to: destination, options: .atomic)
     }
 
     /// Prefers a running service, because that is the only host the proxy has

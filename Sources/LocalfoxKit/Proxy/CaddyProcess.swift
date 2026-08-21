@@ -43,6 +43,17 @@ public struct CaddyLayout: Hashable, Sendable {
         storageRoot.appendingPathComponent("pki/authorities/\(caID)/root.crt")
     }
 
+    /// A copy of the daemon's root that a dev server can actually open.
+    ///
+    /// The production storage is `0700 root:admin`, so `NODE_EXTRA_CA_CERTS`
+    /// cannot point into it: the child process runs as the user and would get
+    /// permission denied. The app exports the PEM over XPC and caches it here.
+    public static var userReadableRoot: URL {
+        FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Localfox/root.crt")
+    }
+
     /// Unprivileged layout for `localfox-run`, entirely under Application Support.
     ///
     /// The socket path is deliberately short: a unix socket address is capped at

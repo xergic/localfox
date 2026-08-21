@@ -116,10 +116,11 @@ actor ServiceRuntime {
         }
         // Node, Bun and Deno ignore the system trust store, so a server
         // component calling fetch("https://api.…") would fail without this.
-        // Production first, then the CLI's own authority, so a service started
-        // under `localfox-run up` gets the root that actually signed its cert.
-        let roots = [CaddyLayout.production(), CaddyLayout.development()].map(\.rootCertificate)
-        if let root = roots.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+        // The cached export first, because the daemon's own copy sits in a
+        // root-owned 0700 directory the child process cannot open. The CLI's
+        // authority is the fallback, for a service started by `localfox-run up`.
+        let roots = [CaddyLayout.userReadableRoot, CaddyLayout.development().rootCertificate]
+        if let root = roots.first(where: { FileManager.default.isReadableFile(atPath: $0.path) }) {
             variables["NODE_EXTRA_CA_CERTS"] = root.path
         }
         return variables
