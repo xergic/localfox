@@ -39,9 +39,13 @@ enum TrustEvaluator {
     }
 
     static func installedRoots() throws -> [RootCAIdentity] {
+        // The authority's own name, not "Localfox". Caddy derives the subject
+        // from it as "<name> - <year> ECC Root", and a bare "Localfox" also
+        // matches the CLI's development authority, which would make a
+        // hand-trusted dev root report the production one as stale.
         let query: [CFString: Any] = [
             kSecClass: kSecClassCertificate,
-            kSecMatchSubjectContains: "Localfox" as CFString,
+            kSecMatchSubjectContains: CaddyLayout.production().caName as CFString,
             kSecMatchLimit: kSecMatchLimitAll,
             kSecReturnRef: true
         ]
