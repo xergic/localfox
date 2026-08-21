@@ -52,6 +52,62 @@ struct ProjectStoreTests {
         #expect(json?["version"] as? Int == StoreDocument.currentVersion)
     }
 
+    @Test("a project icon round-trips")
+    func iconRoundTrips() async throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let project = Project(
+            name: "Wishfox",
+            directory: URL(fileURLWithPath: "/Users/me/wishfox"),
+            services: [service("Web", domain: "wishfox.localhost")],
+            iconPath: "public/favicon.svg"
+        )
+        try await ProjectStore(url: url).save([project])
+        #expect(try await ProjectStore(url: url).load() == [project])
+    }
+
+    /// The store stays at version 1 only because a project on automatic writes
+    /// exactly what it wrote before. A refactor to a hand-written `encode(to:)`
+    /// that emitted `"iconPath": null` would silently break that, and every
+    /// older build would start seeing a key it does not know.
+    @Test("a project with no icon omits the key entirely")
+    func omitsAbsentIcon() async throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let project = Project(
+            name: "Wishfox",
+            directory: URL(fileURLWithPath: "/Users/me/wishfox"),
+            services: [service("Web", domain: "wishfox.localhost")]
+        )
+        try await ProjectStore(url: url).save([project])
+        let written = String(data: try Data(contentsOf: url), encoding: .utf8)
+        #expect(written?.contains("iconPath") == false)
+    }
+
+    @Test("a file written before icons existed still loads")
+    func loadsDocumentWithoutIconKey() async throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        let legacy = #"""
+        {"version":1,"projects":[{
+          "id":"686F0E2F-0F75-42A6-B72E-87CF0B01C289",
+          "name":"Wishfox",
+          "directory":"file:///Users/me/wishfox/",
+          "services":[]
+        }]}
+        """#
+        try legacy.write(to: url, atomically: true, encoding: .utf8)
+
+        let loaded = try await ProjectStore(url: url).load()
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.iconPath == nil)
+    }
+
     /// The failure this prevents is an older build opening a newer file, saving,
     /// and destroying configuration it never understood.
     @Test("a file from a newer build is refused rather than overwritten")

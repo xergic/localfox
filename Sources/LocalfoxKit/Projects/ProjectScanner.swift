@@ -194,23 +194,15 @@ public struct ProjectScanner: Sendable {
                 < apexScore(scored[right], projectSlug: projectSlug)
         }
 
-        var taken: Set<String> = []
+        let hosts = ProjectDomains.hosts(
+            directoryNames: scored.map(\.directory.lastPathComponent),
+            projectSlug: projectSlug,
+            apexIndex: apexIndex
+        )
         for index in scored.indices {
             let isApex = index == apexIndex
-            let slug = LocalDomain.slug(scored[index].directory.lastPathComponent)
-            var host = isApex ? "\(projectSlug).localhost" : "\(slug).\(projectSlug).localhost"
-
-            // A monorepo can hold two packages whose directories slug the same
-            // way, and two services on one domain make routing order-dependent.
-            var suffix = 2
-            while taken.contains(host) {
-                host = "\(slug)-\(suffix).\(projectSlug).localhost"
-                suffix += 1
-            }
-            taken.insert(host)
-
             scored[index].isApex = isApex
-            scored[index].domain = LocalDomain(host) ?? scored[index].domain
+            scored[index].domain = LocalDomain(hosts[index]) ?? scored[index].domain
             scored[index].isSelected = isApex
                 || Self.interestingNames.contains(scored[index].directory.lastPathComponent.lowercased())
         }

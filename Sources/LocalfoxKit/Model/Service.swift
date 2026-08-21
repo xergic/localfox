@@ -137,16 +137,46 @@ public struct Project: Identifiable, Hashable, Codable, Sendable {
     public var name: String
     public var directory: URL
     public var services: [Service]
+    /// The icon the user picked. Relative to `directory` when the file is inside
+    /// the project, absolute otherwise; the leading slash tells the two apart
+    /// without a second key, and the relative form keeps the store readable.
+    ///
+    /// nil means automatic, not blank: `IconResolver` still runs, so a project
+    /// that gains a favicon later picks it up on its own.
+    public var iconPath: String?
 
-    public init(id: UUID = UUID(), name: String, directory: URL, services: [Service] = []) {
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        directory: URL,
+        services: [Service] = [],
+        iconPath: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.directory = directory
         self.services = services
+        self.iconPath = iconPath
     }
 
     public func service(id: UUID) -> Service? {
         services.first { $0.id == id }
+    }
+
+    /// The picked icon as an absolute URL, or nil when the project is on automatic.
+    public var iconURL: URL? {
+        guard let iconPath else { return nil }
+        return iconPath.hasPrefix("/")
+            ? URL(fileURLWithPath: iconPath)
+            : directory.appendingPathComponent(iconPath)
+    }
+
+    /// How a picked file should be stored: relative when it lives in the project.
+    public func iconPathValue(for url: URL) -> String {
+        let base = directory.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix(base + "/") else { return path }
+        return String(path.dropFirst(base.count + 1))
     }
 
     /// Home-relative path for display, for example `~/Projects/wishfox`.
