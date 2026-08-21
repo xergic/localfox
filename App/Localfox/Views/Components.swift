@@ -168,3 +168,44 @@ struct PathList: View {
         }
     }
 }
+
+/// A labelled text field with an inline error, shared by the add and edit sheets.
+struct LabelledField: View {
+    let label: String
+    @Binding var text: String
+    var monospaced = false
+    var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(label)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.secondaryText)
+                Spacer(minLength: 8)
+                if let error {
+                    Text(error)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.danger)
+                }
+            }
+            TextField("", text: $text)
+                .textFieldStyle(.plain)
+                .font(monospaced ? .lfSubtitle : .system(size: 12))
+                .foregroundStyle(Theme.primaryText)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Theme.background)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(
+                                    error == nil ? Theme.border : Theme.danger.opacity(0.6),
+                                    lineWidth: 1
+                                )
+                        )
+                )
+        }
+    }
+}

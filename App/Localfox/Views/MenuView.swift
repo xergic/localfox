@@ -158,44 +158,47 @@ struct ProjectSection: View {
     /// Dashboard only. The popover is a launcher, and a destructive action one
     /// mis-click from Start all does not belong in a window that dismisses itself.
     var showsRemove = false
+    /// Dashboard only, for a second reason: a sheet presented from the popover
+    /// attaches to a window that closes when it resigns key, which loses the
+    /// edit mid-typing.
+    var showsEdit = false
 
     @Environment(AppState.self) private var state
     @State private var isConfirmingRemove = false
+    @State private var isEditing = false
+    @State private var isHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 9) {
-                Circle()
-                    .fill(anyRunning ? Theme.success : Theme.tertiaryText)
-                    .frame(width: 7, height: 7)
+                ServiceIconView(
+                    type: project.services.first?.framework ?? .unknown,
+                    projectIconPath: state.iconPath(for: project),
+                    size: Theme.Metrics.projectIcon
+                )
+                .overlay(alignment: .bottomTrailing) {
+                    Circle()
+                        .fill(anyRunning ? Theme.success : Theme.tertiaryText)
+                        .frame(width: 7, height: 7)
+                        .overlay(Circle().strokeBorder(Theme.card, lineWidth: 1.5))
+                        .offset(x: 2, y: 2)
+                }
                 Text(project.name)
                     .font(.lfProject)
                     .foregroundStyle(Theme.primaryText)
                     .fixedSize()
+                // Hidden rather than squeezed while the actions are up. Reserving
+                // room for four buttons the way `ServiceRow` does leaves a 300pt
+                // sidebar rendering `~/Work/Wishfox/wishfox-api` as `…i`, and the
+                // path is worth more at rest than under the pointer.
                 Text(project.displayPath)
                     .font(.lfSubtitle)
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.head)
+                    .help(project.displayPath)
+                    .opacity(showsActions ? 0 : 1)
                 Spacer(minLength: 0)
-
-                if anyRunning {
-                    IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop all") {
-                        Task { await state.stopAll(project) }
-                    }
-                } else {
-                    IconButton(symbol: "play.fill", tint: Theme.success, help: "Start all") {
-                        Task { await state.startAll(project) }
-                    }
-                }
-                IconButton(symbol: "folder", help: "Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([project.directory])
-                }
-                if showsRemove {
-                    IconButton(symbol: "trash", help: "Remove project") {
-                        isConfirmingRemove = true
-                    }
-                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -203,6 +206,10 @@ struct ProjectSection: View {
                 RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
                     .fill(Theme.card)
             )
+            .overlay(alignment: .trailing) {
+                if showsActions { headerActions }
+            }
+            .onHover { isHovering = $0 }
 
             ForEach(project.services) { service in
                 ServiceRow(
@@ -213,6 +220,9 @@ struct ProjectSection: View {
                 )
             }
             .padding(.leading, 7)
+        }
+        .sheet(isPresented: $isEditing) {
+            EditProjectSheet(project: project).environment(state)
         }
         .alert("Remove \(project.name)?", isPresented: $isConfirmingRemove) {
             Button("Cancel", role: .cancel) {}
@@ -226,6 +236,32 @@ struct ProjectSection: View {
             Text("Localfox forgets this project and its services. Nothing on disk changes.")
         }
     }
+
+    private var headerActions: some View {
+        HStack(spacing: 1) {
+            if anyRunning {
+                IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop all") {
+                    Task { await state.stopAll(project) }
+                }
+            } else {
+                IconButton(symbol: "play.fill", tint: Theme.success, help: "Start all") {
+                    Task { await state.startAll(project) }
+                }
+            }
+            IconButton(symbol: "folder", help: "Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([project.directory])
+            }
+            if showsEdit {
+                IconButton(symbol: "pencil", help: "Edit project") { isEditing = true }
+            }
+            if showsRemove {
+                IconButton(symbol: "trash", help: "Remove project") { isConfirmingRemove = true }
+            }
+        }
+        .padding(.trailing, 8)
+    }
+
+    private var showsActions: Bool { isHovering || forcesHover }
 
     private var anyRunning: Bool {
         project.services.contains { state.status(of: $0).isRunning }

@@ -39,6 +39,7 @@ final class AppState {
         do {
             let loaded = try await store.load()
             assign(\.projects, loaded)
+            await refreshDetectedIcons()
         } catch {
             assign(\.lastError, error.localizedDescription)
         }
@@ -273,6 +274,7 @@ final class AppState {
         var updated = projects
         updated.append(project)
         save(updated)
+        Task { await refreshDetectedIcons() }
     }
 
     /// Stops first. Once the project is gone there is no row left to reach its
@@ -293,12 +295,90 @@ final class AppState {
         save(projects.map { $0.id == project.id ? project : $0 })
     }
 
+    /// Applies an edited project and reports which running services now hold a
+    /// domain their process does not know about.
+    ///
+    /// The proxy is synced before anything restarts, so the route table already
+    /// carries the new host by the time a process comes back and confirms over it.
+    @discardableResult
+    func apply(_ edited: Project) async -> [Service] {
+        let previous = projects.first { $0.id == edited.id }
+        let moved = edited.services.filter { service in
+            previous?.service(id: service.id)?.domain != service.domain
+                && status(of: service).isRunning
+        }
+        replace(edited)
+        await refreshDetectedIcons()
+        await syncProxy()
+        return moved
+    }
+
+    /// `LOCALFOX_URL` and `LOCALFOX_HOST` are injected at spawn, so a running
+    /// service cannot pick up a new domain without being restarted. Reads the
+    /// service back from the store first: restarting the stale value would
+    /// re-inject the old host, which is the whole bug.
+    func restartForNewDomain(_ services: [Service]) async {
+        for service in services {
+            guard let current = projects.compactMap({ $0.service(id: service.id) }).first else { continue }
+            await restart(current)
+        }
+    }
+
+    func setIcon(_ path: String?, for project: Project) async {
+        var edited = project
+        edited.iconPath = path.map { edited.iconPathValue(for: URL(fileURLWithPath: $0)) }
+        await apply(edited)
+    }
+
+    // MARK: - Icons
+
+    /// What `IconResolver` found for each project, which is deliberately not
+    /// persisted: it is a fact about the directory, not a user choice, so a
+    /// project that gains a favicon later picks it up on its own.
+    private(set) var detectedIcons: [UUID: String] = [:]
+
+    func iconPath(for project: Project) -> String? {
+        project.iconURL?.path ?? detectedIcons[project.id]
+    }
+
+    func hasIconOverride(_ project: Project) -> Bool {
+        project.iconPath != nil
+    }
+
+    func projectAssets(for project: Project) -> [ProjectAsset] {
+        ProjectAssetScanner().assets(root: project.directory, serviceDirectory: project.directory)
+    }
+
+    /// Resolved off the main actor and written as one map, so a draw never
+    /// touches the disk and an unchanged scan never triggers a redraw.
+    ///
+    /// Awaited rather than fired and forgotten: every caller is already async,
+    /// and letting it land late makes the icon visibly pop in after the list has
+    /// already drawn.
+    private func refreshDetectedIcons() async {
+        let inputs = projects.map { (id: $0.id, directory: $0.directory) }
+        let resolved = await Task.detached {
+            let resolver = IconResolver()
+            return inputs.reduce(into: [UUID: String]()) { found, project in
+                found[project.id] = resolver.projectIconPath(
+                    root: project.directory,
+                    serviceDirectory: project.directory
+                )
+            }
+        }.value
+        assign(\.detectedIcons, resolved)
+    }
+
     /// Rejects a duplicate before writing, so the interface can show the clash
     /// against the domain field rather than after a failed save.
-    func domainOwner(of domain: LocalDomain, excluding serviceID: UUID?) -> Service? {
+    ///
+    /// Excludes a set, not one id: an edit sheet swapping two domains inside one
+    /// project would otherwise clash against the sibling's saved value, which is
+    /// about to be overwritten by the same save.
+    func domainOwner(of domain: LocalDomain, excluding serviceIDs: Set<UUID>) -> Service? {
         for project in projects {
             for service in project.services
-            where service.domain == domain && service.id != serviceID {
+            where service.domain == domain && !serviceIDs.contains(service.id) {
                 return service
             }
         }

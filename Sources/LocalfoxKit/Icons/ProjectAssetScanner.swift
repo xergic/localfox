@@ -40,7 +40,10 @@ public struct ProjectAssetScanner: Sendable {
     /// `stat` calls and always surfaces the best icon.
     static let collectionCeiling = 400
 
-    private static let maximumFileSizeInBytes = 4 * 1024 * 1024
+    /// Also enforced on a hand-picked file: a picked image is decoded and cached
+    /// for the life of the process, so the picker must not accept what the scan
+    /// would have refused.
+    public static let maximumFileSizeInBytes = 4 * 1024 * 1024
 
     private static let excludedDirectoryNames: Set<String> = [
         "node_modules", ".git", "dist", "build", ".next", ".nuxt", ".output",

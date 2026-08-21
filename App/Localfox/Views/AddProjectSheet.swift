@@ -208,7 +208,7 @@ struct AddProjectSheet: View {
     /// the field rather than surfacing later as a failed save.
     private func clash(for candidate: EditableService) -> String? {
         guard candidate.isSelected, let domain = LocalDomain(candidate.domain) else { return nil }
-        if let existing = state.domainOwner(of: domain, excluding: nil) {
+        if let existing = state.domainOwner(of: domain, excluding: []) {
             return "Already used by \(existing.name)"
         }
         let duplicates = selected.filter { $0.domain.lowercased() == candidate.domain.lowercased() }
@@ -281,45 +281,5 @@ private struct ServiceEditor: View {
         if let clash { return clash }
         guard candidate.isSelected, !candidate.domain.isEmpty else { return nil }
         return LocalDomain(candidate.domain) == nil ? "Must be a valid .localhost name" : nil
-    }
-}
-
-private struct LabelledField: View {
-    let label: String
-    @Binding var text: String
-    var monospaced = false
-    var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(label)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.secondaryText)
-                Spacer(minLength: 8)
-                if let error {
-                    Text(error)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.danger)
-                }
-            }
-            TextField("", text: $text)
-                .textFieldStyle(.plain)
-                .font(monospaced ? .lfSubtitle : .system(size: 12))
-                .foregroundStyle(Theme.primaryText)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Theme.background)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(
-                                    error == nil ? Theme.border : Theme.danger.opacity(0.6),
-                                    lineWidth: 1
-                                )
-                        )
-                )
-        }
     }
 }

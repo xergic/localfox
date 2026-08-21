@@ -110,7 +110,8 @@ struct DashboardContent: View {
                                 project: project,
                                 selection: $selection,
                                 showsHoverActions: false,
-                                showsRemove: true
+                                showsRemove: true,
+                                showsEdit: true
                             )
                         }
                     }
