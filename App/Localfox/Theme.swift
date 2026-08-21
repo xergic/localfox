@@ -14,10 +14,11 @@ enum Theme {
     static let tertiaryText = Color(red: 0.396, green: 0.396, blue: 0.427)
 
     /// Interactive chrome only: a primary button, a selected row, a chosen
-    /// segment. The same orange as the menu bar fox, so the accent is the brand.
-    static let accent = Color(red: 0.980, green: 0.549, blue: 0.239)
-    /// "This is healthy", never chrome. Kept green after the accent turned
-    /// orange, because an orange 200 OK reads as a warning.
+    /// segment. The same teal as the app icon, so the accent is the brand.
+    static let accent = Color(red: 0.0, green: 0.78431, blue: 0.70196)
+    /// "This is healthy", never chrome. Deliberately a warmer, lighter green than
+    /// the teal accent, because the two sit next to each other wherever the wall
+    /// renders "ready" against "not ready yet".
     static let success = Color(red: 0.133, green: 0.773, blue: 0.369)
     static let danger = Color(red: 0.937, green: 0.267, blue: 0.267)
 
