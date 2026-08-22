@@ -219,8 +219,11 @@ Developer ID, notarizes, staples, builds the DMG and publishes it.
 Signing is inside-out and never uses `--deep`: caddy, then the helper, then the app.
 `--deep` is fine for `--verify` only.
 
-Caddy must be signed **after** it lands in the bundle, which is what `codeSign: true`
-on the copy phase does.
+Caddy must be signed **after** it lands in the bundle, which is what
+`attributes: [CodeSignOnCopy]` on its `sources` entry does. The `codeSign: true` key works
+on a *dependency* entry, like the helper's, and is silently ignored on a `sources` one, so
+Caddy carried the ad hoc signature from `fetch-caddy.sh` into the bundle until this was
+fixed.
 
 The daemon plist is sealed into the bundle, so changing it needs a re-sign *and* an
 `unregister()`/`register()` cycle or launchd keeps the stale copy.

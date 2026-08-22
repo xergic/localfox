@@ -50,10 +50,14 @@ targets:
           copyFiles:
             destination: wrapper
             subpath: Contents/Library/LaunchDaemons
-      # Caddy is signed after it lands in the bundle, which is what the copy
-      # phase does. Signing it in place first and copying after invalidates it.
+      # Caddy is signed after it lands in the bundle, which is what
+      # CodeSignOnCopy does. Signing it in place first and copying after
+      # invalidates the signature. Without the attribute it keeps the ad hoc
+      # signature fetch-caddy.sh gave it, carries no Team ID, and the release
+      # stays unnotarizable.
       - path: Vendor/caddy/caddy
         type: file
+        attributes: [CodeSignOnCopy]
         buildPhase:
           copyFiles:
             destination: executables
