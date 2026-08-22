@@ -113,6 +113,28 @@ and builds the config itself, so a non-loopback upstream is not expressible acro
 boundary rather than merely rejected. Every connecting client is checked against a code
 signing requirement pinned to the bundle ID and Team ID.
 
+## Sharing
+
+A running service can be shared on the public internet from the **Share** button, or from
+`localfox-run tunnel 5173`. Localfox opens a Cloudflare quick tunnel with the bundled
+`cloudflared` and hands you a `https://….trycloudflare.com` address.
+
+No Cloudflare account is involved. The address is random, changes every time, and is not
+reserved to you.
+
+This is the one thing Localfox does that reaches past the loopback interface, so it is
+worth being plain about what it means. Anyone with the link reaches your dev server
+directly, with no authentication in front of it: your source maps, your `.env` values and
+every API route. Sharing stops when the service stops and when Localfox quits, and is
+never restored on relaunch.
+
+The tunnel dials `127.0.0.1:<port>` directly rather than going through the proxy, so it
+works before the helper is installed and does not depend on the certificate being trusted.
+By default Localfox rewrites the origin `Host` header to `localhost:<port>`, which is what
+stops Vite and Next rejecting the request as an unknown host. Turn that off in Preferences
+if your app builds absolute URLs from the header, such as Django's `ALLOWED_HOSTS` or an
+OAuth callback.
+
 ## Known limitations
 
 - Apple Silicon only.
@@ -123,6 +145,12 @@ signing requirement pinned to the bundle ID and Team ID.
 - A dev server bound to `0.0.0.0` is already reachable from your LAN regardless of what
   Localfox does. Localfox flags this rather than claiming otherwise.
 - A process that daemonizes and escapes its process group cannot be attributed or stopped.
+- Cloudflare quick tunnels do not support Server-Sent Events. WebSocket HMR works over a
+  share; an SSE-based reload does not. Lifting this needs a named tunnel and an account,
+  which Localfox does not do.
+- Quick tunnels cap at 200 concurrent in-flight requests and answer `429` beyond it.
+- A shared address is public for as long as the share is open. Cloudflare assigns it, and
+  Localfox cannot reserve, rename or password-protect it.
 - Only Next.js and Vite have verified HMR behaviour behind the proxy. Other frameworks are
   detected but not yet proven end to end.
 

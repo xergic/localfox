@@ -16,9 +16,9 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    # Apple Silicon only. Caddy is 44 MB per slice and macOS 26 supports
-    # almost no Intel hardware, so a universal build doubles the download
-    # for a vanishing audience.
+    # Apple Silicon only. Caddy is 44 MB per slice and cloudflared another 39,
+    # and macOS 26 supports almost no Intel hardware, so a universal build
+    # doubles an already large download for a vanishing audience.
     ARCHS: arm64
     ONLY_ACTIVE_ARCH: NO
 
@@ -50,12 +50,19 @@ targets:
           copyFiles:
             destination: wrapper
             subpath: Contents/Library/LaunchDaemons
-      # Caddy is signed after it lands in the bundle, which is what
-      # CodeSignOnCopy does. Signing it in place first and copying after
-      # invalidates the signature. Without the attribute it keeps the ad hoc
-      # signature fetch-caddy.sh gave it, carries no Team ID, and the release
-      # stays unnotarizable.
+      # Both vendored binaries are signed after they land in the bundle, which
+      # is what CodeSignOnCopy does. Signing in place first and copying after
+      # invalidates the signature. Without the attribute they keep the ad hoc
+      # signature fetch-*.sh gave them, carry no Team ID, and the release stays
+      # unnotarizable.
       - path: Vendor/caddy/caddy
+        type: file
+        attributes: [CodeSignOnCopy]
+        buildPhase:
+          copyFiles:
+            destination: executables
+            subpath: ""
+      - path: Vendor/cloudflared/cloudflared
         type: file
         attributes: [CodeSignOnCopy]
         buildPhase:

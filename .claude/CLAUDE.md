@@ -19,6 +19,7 @@ make env      # print the resolved login shell environment
 make lint     # SwiftLint, must stay clean
 make gen      # regenerate Localfox.xcodeproj from project.yml
 make caddy    # fetch and verify the pinned Caddy binary into Vendor/
+make cloudflared # fetch and verify the pinned cloudflared binary into Vendor/
 make snapshot # render the popover and dashboard to snapshots/
 make archive  # Release app and DMG into dist/
 ```
@@ -54,6 +55,7 @@ PNGs, or build output.
 | `Helper/Sources/` | The root LaunchDaemon. The security boundary. |
 | `Tests/LocalfoxKitTests/` | Tests for the kit only. The app and helper targets have none. |
 | `Vendor/caddy/` | Pinned upstream Caddy, fetched by `Tools/fetch-caddy.sh`. |
+| `Vendor/cloudflared/` | Pinned upstream cloudflared, fetched by `Tools/fetch-cloudflared.sh`. |
 | `Tools/` | `fetch-caddy.sh`, `fetch-icons.py`, `archive.sh`, `make-dmg.sh`. |
 | `.github/` | CI on every push, the signed release pipeline on a tag. |
 
@@ -67,6 +69,7 @@ localfox-run env                     # the PATH recovered from your login shell
 localfox-run run <dir> -- <cmd>      # spawn a dev server, report the port it bound
 localfox-run caddy-config <h:p>...   # the proxy config Localfox would use
 localfox-run up <h:p>...             # run the proxy on 8080/8443, unprivileged
+localfox-run tunnel <port>           # share a local port publicly via cloudflared
 ```
 
 The app builds and runs as a menu bar agent with a setup wall. The helper compiles
@@ -201,6 +204,45 @@ inside that callback, where the notification has already fired, which is why
 brand fill; `accentText` is the accent as a glyph, darkened in light because the
 brand colour scores about 2:1 on white.
 
+## Sharing
+
+Public sharing runs the bundled `cloudflared` as a quick tunnel. It is the only part of
+Localfox that reaches past loopback, so every rule here exists to keep it bounded.
+
+**A tunnel is never persisted.** No field on `Service`, nothing in `projects.json`, so the
+store stays version 1. A share that came back after a relaunch would be a public URL
+nobody remembers opening, which is the one failure this feature cannot have.
+
+**A tunnel never outlives its port.** `AppState.setStatus` tears it down the moment a
+service leaves `.running`, including a restart, because Auto can bind a different port the
+second time. `stopEverything()` closes tunnels before servers.
+
+**cloudflared dials the port directly, never the proxy.** Routing through Caddy would need
+`--no-tls-verify` and a `LocalDomain` that cannot express a public host anyway. Direct
+also means Share works before the helper is installed.
+
+**The run is isolated from `~/.cloudflared/config.yml` with `--config /dev/null`.** A
+developer who has ever run `cloudflared tunnel login` has one, and its keys merge in
+silently. An `ingress:` block there overrides `--url` outright, which would publish a URL
+pointing at a service the user never shared. This was measured, not assumed.
+
+**Failures are matched by signal, not by log level.** `--config /dev/null` logs one benign
+`ERR Configuration file was empty` on every healthy start, so treating `ERR` as fatal fails
+every tunnel.
+
+**The `Host` header is rewritten to `localhost:<port>` by default.** Vite and Next reject
+an unknown host outright. It is a preference rather than a constant because Django's
+`ALLOWED_HOSTS` and any OAuth callback need the real public name instead.
+
+**Cloudflare publishes the SHA-256 of the extracted binary, not the archive**, despite
+listing it under the archive's filename. `Tools/fetch-cloudflared.sh` therefore pins both:
+a self-computed archive hash gates the extraction, and Cloudflare's published hash anchors
+the result. A straight copy of `fetch-caddy.sh`, which hashes the archive, fails on the
+first run.
+
+**Quick tunnels do not support SSE**, and cap at 200 in-flight requests. Both are Cloudflare
+limits that only a named tunnel lifts. Say so rather than working around them.
+
 ## Ports and privilege
 
 Binding 80 and 443 requires root, so the app registers an `SMAppService.daemon` that
@@ -219,11 +261,11 @@ Developer ID, notarizes, staples, builds the DMG and publishes it.
 Signing is inside-out and never uses `--deep`: caddy, then the helper, then the app.
 `--deep` is fine for `--verify` only.
 
-Caddy must be signed **after** it lands in the bundle, which is what
-`attributes: [CodeSignOnCopy]` on its `sources` entry does. The `codeSign: true` key works
-on a *dependency* entry, like the helper's, and is silently ignored on a `sources` one, so
+The vendored binaries must be signed **after** they land in the bundle, which is what
+`attributes: [CodeSignOnCopy]` on each `sources` entry does. The `codeSign: true` key works
+on a *dependency* entry, like the helper's, and is silently ignored on a `sources` one:
 Caddy carried the ad hoc signature from `fetch-caddy.sh` into the bundle until this was
-fixed.
+fixed. `release.yml` now fails the build if either binary is still ad hoc signed.
 
 The daemon plist is sealed into the bundle, so changing it needs a re-sign *and* an
 `unregister()`/`register()` cycle or launchd keeps the stale copy.

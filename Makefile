@@ -14,7 +14,7 @@ HELPER_LABEL := net.kandera.localfox.helper
 help: ## Show available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
 
-gen: caddy ## Regenerate the Xcode project from project.yml
+gen: caddy cloudflared ## Regenerate the Xcode project from project.yml
 	xcodegen generate --quiet
 
 build: ## Build the SwiftPM core
@@ -31,6 +31,9 @@ env: ## Print the resolved login shell environment
 
 caddy: ## Fetch and verify the pinned Caddy binary into Vendor/
 	@Tools/fetch-caddy.sh
+
+cloudflared: ## Fetch and verify the pinned cloudflared binary into Vendor/
+	@Tools/fetch-cloudflared.sh
 
 app: gen ## Build the menu bar app
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) \
@@ -67,4 +70,4 @@ lint: ## Run SwiftLint
 clean: ## Remove build artefacts
 	rm -rf .build $(DERIVED) $(PROJECT) snapshots dist
 
-.PHONY: help gen build test detect env caddy app run reinstall-helper snapshot archive lint clean
+.PHONY: help gen build test detect env caddy cloudflared app run reinstall-helper snapshot archive lint clean

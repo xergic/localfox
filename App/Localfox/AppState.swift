@@ -16,10 +16,15 @@ final class AppState {
     /// saved configuration and a status is not; writing one would rewrite the
     /// store on every poll tick.
     private(set) var statuses: [UUID: ServiceStatus] = [:]
+    /// Live tunnel state per service, kept apart from `statuses` for the same
+    /// reason that is kept apart from `Service`, and never persisted. See
+    /// `TunnelStatus` for why a share must not survive a relaunch.
+    private(set) var tunnels: [UUID: TunnelStatus] = [:]
 
     /// Owns registration and the XPC channel. Read through `helper`.
     let helperClient = HelperClient()
     let appearance = Appearance()
+    let sharing = SharingPreferences()
 
     /// Held here rather than in the dashboard's own state, because the popover
     /// asks for the sheet on a window that does not exist yet.
@@ -33,6 +38,7 @@ final class AppState {
     private let store: ProjectStore
     private let resolver = ShellEnvironmentResolver()
     private var runtime: ServiceRuntime?
+    private var tunnelRuntime: TunnelRuntime?
 
     init(store: ProjectStore = ProjectStore()) {
         self.store = store
@@ -208,6 +214,15 @@ final class AppState {
                 Task { @MainActor in await self?.refreshLog(for: id) }
             }
         )
+        // Unlike the service runtime this needs no shell environment: the
+        // binary is addressed by absolute path and runs with a minimal one. It
+        // is built here anyway so the two share a lifetime and neither can be
+        // nil while the other is not.
+        tunnelRuntime = TunnelRuntime(
+            onStatus: { [weak self] id, status in
+                Task { @MainActor in self?.setTunnelStatus(status, for: id) }
+            }
+        )
     }
 
     // MARK: - Running services
@@ -217,12 +232,23 @@ final class AppState {
         await runtime.start(service, projectName: project.name)
     }
 
+    /// Closes the tunnel first, and waits for it.
+    ///
+    /// The reactive teardown in `setStatus` is a safety net, not the ordering:
+    /// it fires from an unstructured task, so on its own the port can close
+    /// while cloudflared is still queued behind a multi-second termination
+    /// grace period, serving 502s under a URL somebody already has.
     func stop(_ service: Service) async {
+        await unshare(service)
         await runtime?.stop(service)
     }
 
+    /// Same ordering as `stop`, and for a second reason: under Auto the new
+    /// process can bind a different port, so a tunnel carried across a restart
+    /// would point at the old one.
     func restart(_ service: Service) async {
         guard let runtime, let project = project(owning: service.id) else { return }
+        await unshare(service)
         await runtime.restart(service, projectName: project.name)
     }
 
@@ -242,9 +268,47 @@ final class AppState {
         }
     }
 
-    /// Called when the app is quitting, so no dev server outlives Localfox.
+    /// Called when the app is quitting, so neither a dev server nor a public
+    /// URL outlives Localfox.
+    ///
+    /// Tunnels first. Stopping a service tears its tunnel down anyway, but only
+    /// via the status callback, and that hop is not guaranteed to land before
+    /// the process exits.
     func stopEverything() async {
+        await tunnelRuntime?.stopAll()
         await runtime?.stopAll()
+    }
+
+    // MARK: - Public sharing
+
+    /// Opens a public tunnel to a running service.
+    ///
+    /// Requires a discovered port, so this is only reachable once the status is
+    /// `.running`. Under Auto the port does not exist until the dev server has
+    /// bound it, and a tunnel to a port nothing is listening on serves 502s
+    /// under a URL the user has already sent to somebody.
+    func share(_ service: Service) async {
+        guard let tunnelRuntime,
+              case let .running(pid, port) = status(of: service) else { return }
+        await tunnelRuntime.start(
+            serviceID: service.id,
+            port: port,
+            // `ServiceRuntime` spawns with SETSID, so the pid is the group.
+            originGroup: pid,
+            rewriteHost: sharing.rewritesHostHeader
+        )
+    }
+
+    func unshare(_ service: Service) async {
+        await tunnelRuntime?.stop(service.id)
+    }
+
+    func tunnel(of service: Service) -> TunnelStatus {
+        tunnels[service.id] ?? .off
+    }
+
+    func publicURL(for service: Service) -> URL? {
+        tunnel(of: service).url
     }
 
     func log(for service: Service) -> String {
@@ -305,6 +369,7 @@ final class AppState {
         for service in project.services {
             statuses[service.id] = nil
             logs[service.id] = nil
+            tunnels[service.id] = nil
         }
         await syncProxy()
     }
@@ -434,19 +499,50 @@ final class AppState {
 
     func setStatus(_ status: ServiceStatus, for serviceID: UUID) {
         guard statuses[serviceID] != status else { return }
+        let wasRunning = statuses[serviceID]?.isRunning == true
         // A stop reported by the runtime lands here after the project it belongs
         // to was already removed, and would otherwise leave a status keyed to a
         // service nothing can show. Below the cheap check, because this scan is
         // linear over every service and the status usually has not moved.
         guard project(owning: serviceID) != nil else {
             statuses[serviceID] = nil
+            tunnels[serviceID] = nil
+            Task { await self.tunnelRuntime?.stop(serviceID) }
             return
         }
         statuses[serviceID] = status
+        // A tunnel outliving the port it dials is the one failure this feature
+        // must not have: cloudflared keeps serving 502s under a URL the user has
+        // already sent to somebody. A restart counts, because the new process
+        // can bind a different port under Auto.
+        if wasRunning, !status.isRunning {
+            // Cleared here as well as asked to stop. A tunnel that already
+            // failed has no record left in the runtime, so `stop` returns
+            // without reporting `.off`, and the stale failure would sit on a
+            // stopped service until the next successful share.
+            tunnels[serviceID] = nil
+            Task { await self.tunnelRuntime?.stop(serviceID) }
+        }
         // A newly discovered port is only useful once the proxy knows it.
         if status.isRunning || status == .stopped {
             Task { await self.syncProxy() }
         }
+    }
+
+    func setTunnelStatus(_ status: TunnelStatus, for serviceID: UUID) {
+        // `.off` is the absence of a tunnel, so it is stored as one. Keeping the
+        // case would leave every service ever shared in the map, and the menu
+        // bar counts what is in it.
+        let resolved: TunnelStatus? = status == .off ? nil : status
+        // Compared before writing, and compared as the optional that is actually
+        // stored. `dict[key] = nil` on an absent key still runs the setter, and
+        // under @Observable that redraws every view reading `tunnels`.
+        guard tunnels[serviceID] != resolved else { return }
+        guard project(owning: serviceID) != nil else {
+            tunnels[serviceID] = nil
+            return
+        }
+        tunnels[serviceID] = resolved
     }
 
     func clearError() {

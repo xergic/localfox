@@ -23,6 +23,8 @@ enum CLI {
             caddyConfig(arguments)
         case "up":
             await up(arguments)
+        case "tunnel":
+            await tunnel(arguments)
         case "help", "--help", "-h":
             usage()
         default:
@@ -39,6 +41,7 @@ enum CLI {
           run <dir> -- <cmd>   Start a dev command and report the port it binds
           caddy-config <h:p>…  Print the proxy config for host:port pairs
           up <h:p>…            Start the proxy for host:port pairs on 8080/8443
+          tunnel <port>        Share a local port publicly over a Cloudflare tunnel
           help                 This text
         """)
     }
@@ -307,6 +310,93 @@ enum CLI {
             source.resume()
             return source
         }
+    }
+
+    /// Shares a local port publicly, for `localfox-run tunnel 5173`.
+    ///
+    /// The one command here that reaches past the loopback interface, so it says
+    /// so before it does anything and prints the URL on a line of its own.
+    static func tunnel(_ arguments: [String]) async {
+        guard let first = arguments.first, let port = Int(first), (1...65_535).contains(port) else {
+            fail("tunnel needs a port", hint: "localfox-run tunnel 5173")
+        }
+        // `--no-host-rewrite` rather than an opt-in flag, matching the app's
+        // default: Vite and Next reject an unknown Host outright, so the
+        // rewrite is what makes the common case work at all.
+        let rewriteHost = !arguments.contains("--no-host-rewrite")
+
+        let binary = CloudflaredLayout.binary()
+        guard FileManager.default.isExecutableFile(atPath: binary.path) else {
+            fail(
+                "cloudflared is missing at \(binary.path)",
+                hint: "run `make cloudflared` to fetch it"
+            )
+        }
+
+        print("sharing 127.0.0.1:\(port) publicly. anyone with the link reaches it directly.")
+        let request = CloudflaredCommand.request(
+            binary: binary, port: port, rewriteHost: rewriteHost
+        )
+
+        let process: SpawnedProcess
+        do {
+            process = try ProcessSpawner.spawn(request)
+        } catch {
+            fail("could not start cloudflared: \(error)", hint: "run `make cloudflared` to refetch")
+        }
+
+        let sources = installTeardown(group: process.processGroup, label: "tunnel")
+        defer { sources.forEach { $0.cancel() } }
+
+        // Prints and accumulates in one reader. `streamOutput` prints and
+        // discards, and a second handler on the same descriptor would race it
+        // for the bytes rather than see a copy.
+        let accumulated = TunnelLog()
+        for (handle, prefix) in [(process.standardOutput, "out"), (process.standardError, "err")] {
+            handle.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                let text = String(decoding: data, as: UTF8.self)
+                for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+                    print("  [\(prefix)] \(line)")
+                }
+                Task { await accumulated.append(text) }
+            }
+        }
+
+        // The banner is the only place the hostname ever appears, and
+        // cloudflared buries it in ASCII box drawing, so it is echoed plainly.
+        var announced = false
+        while ProcessSpawner.isAlive(process.processGroup) {
+            // Failure before URL, matching TunnelRuntime.poll. cloudflared names
+            // the API endpoint it could not reach in the error text, and that is
+            // a trycloudflare.com host too.
+            if !announced, let failure = await accumulated.failure {
+                fail("the tunnel never opened: \(failure)", hint: "check the log above")
+            }
+            if !announced, let url = await accumulated.url {
+                print("\n  public url: \(url.absoluteString)\n")
+                announced = true
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        if !announced, let failure = await accumulated.failure {
+            fail("the tunnel never opened: \(failure)", hint: "check the log above")
+        }
+    }
+
+    /// Accumulates cloudflared's output so the hostname can be read out of it.
+    ///
+    /// An actor because the readability handler fires on an arbitrary queue
+    /// while the command loop polls from another.
+    private actor TunnelLog {
+        private var text = ""
+
+        func append(_ chunk: String) { text += chunk }
+
+        var url: URL? { QuickTunnelParser.publicURL(in: text) }
+
+        var failure: String? { QuickTunnelParser.failure(in: text) }
     }
 
     static func fail(_ message: String, hint: String) -> Never {

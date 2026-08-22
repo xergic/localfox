@@ -116,22 +116,37 @@ jobs:
       - name: Verify the build before notarizing
         run: |
           app="$RUNNER_TEMP/export/Localfox.app"
-          # Localfox is arm64 only. Caddy is 44 MB per slice and macOS 26 supports
-          # almost no Intel hardware, so a second slice doubles the download for a
-          # vanishing audience. The gate is that the build is arm64 and nothing
-          # else, which catches a runner that silently produced the wrong arch.
+          # Localfox is arm64 only. Caddy is 44 MB per slice and cloudflared
+          # another 39, and macOS 26 supports almost no Intel hardware, so a
+          # second slice doubles an already large download for a vanishing
+          # audience. The gate is that the build is arm64 and nothing else,
+          # which catches a runner that silently produced the wrong arch.
           archs=$(lipo -archs "$app/Contents/MacOS/Localfox")
           echo "architectures: $archs"
           if [ "$archs" != "arm64" ]; then
             echo "Expected an arm64-only build, got: $archs" >&2
             exit 1
           fi
-          caddy_archs=$(lipo -archs "$app/Contents/MacOS/caddy")
-          echo "caddy architectures: $caddy_archs"
-          if [ "$caddy_archs" != "arm64" ]; then
-            echo "Expected an arm64-only Caddy, got: $caddy_archs" >&2
-            exit 1
-          fi
+          for vendored in caddy cloudflared; do
+            vendored_archs=$(lipo -archs "$app/Contents/MacOS/$vendored")
+            echo "$vendored architectures: $vendored_archs"
+            if [ "$vendored_archs" != "arm64" ]; then
+              echo "Expected an arm64-only $vendored, got: $vendored_archs" >&2
+              exit 1
+            fi
+            # CodeSignOnCopy is what re-signs these with the real identity. A
+            # vendored binary still carrying the ad hoc signature fetch-*.sh gave
+            # it has no Team ID, and notarization rejects the whole bundle.
+            if ! codesign --verify --strict "$app/Contents/MacOS/$vendored"; then
+              echo "$vendored is not validly signed inside the bundle" >&2
+              exit 1
+            fi
+            if codesign --display --verbose=2 "$app/Contents/MacOS/$vendored" 2>&1 \
+              | grep -q "Signature=adhoc"; then
+              echo "$vendored is still ad hoc signed; CodeSignOnCopy did not run" >&2
+              exit 1
+            fi
+          done
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign --display --verbose=4 "$app"
 

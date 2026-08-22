@@ -8,6 +8,7 @@ struct ServiceDetailPane: View {
     var scrolls = true
 
     @Environment(AppState.self) private var state
+    @State private var confirmsShare = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -34,6 +35,10 @@ struct ServiceDetailPane: View {
                             LabeledRow(label: "Process", value: "pid \(pid)")
                             CardDivider()
                             LabeledRow(label: "Proxying", value: "127.0.0.1:\(port)")
+                        }
+                        if tunnel != .off {
+                            CardDivider()
+                            publicRow
                         }
                     }
                 }
@@ -64,9 +69,57 @@ struct ServiceDetailPane: View {
 
             logs
         }
+        .confirmationDialog(
+            "Share \(service.name) on the public internet?",
+            isPresented: $confirmsShare,
+            titleVisibility: .visible
+        ) {
+            Button("Share Publicly", role: .destructive) { confirmedShare() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(SharingWarning.text)
+        }
     }
 
     private var status: ServiceStatus { state.status(of: service) }
+
+    private var tunnel: TunnelStatus { state.tunnel(of: service) }
+
+    @ViewBuilder
+    private var publicRow: some View {
+        switch tunnel {
+        case .off:
+            EmptyView()
+        case .starting:
+            LabeledRow(label: "Public URL", value: "Opening tunnel…", tint: Theme.accentText)
+        case let .live(url):
+            HStack(spacing: 6) {
+                LabeledRow(label: "Public URL", value: url.absoluteString, tint: Theme.success)
+                IconButton(symbol: "doc.on.doc", help: "Copy public URL") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                }
+            }
+        case let .failed(message):
+            LabeledRow(label: "Public URL", value: message, tint: Theme.danger)
+        }
+    }
+
+    private func confirmedShare() {
+        state.sharing.warningAccepted = true
+        Task { await state.share(service) }
+    }
+
+    /// Skips the dialog once the user has accepted it, because a warning shown
+    /// every time is a warning nobody reads.
+    private func requestShare() {
+        guard status.isRunning else { return }
+        if state.sharing.warningAccepted {
+            Task { await state.share(service) }
+        } else {
+            confirmsShare = true
+        }
+    }
 
     private var portDescription: String {
         switch service.portMode {
@@ -108,6 +161,28 @@ struct ServiceDetailPane: View {
 
             if let url = state.url(for: service) {
                 ActionButton(title: "Open", symbol: "globe") { NSWorkspace.shared.open(url) }
+            }
+
+            // Only while running: a tunnel needs the discovered port, and under
+            // Auto that does not exist until the dev server has bound it.
+            if status.isRunning {
+                if tunnel.isLive {
+                    ActionButton(
+                        title: "Stop Sharing",
+                        symbol: "antenna.radiowaves.left.and.right.slash",
+                        tint: Theme.danger
+                    ) {
+                        Task { await state.unshare(service) }
+                    }
+                } else {
+                    ActionButton(
+                        title: tunnel.isTransitioning ? "Sharing…" : "Share",
+                        symbol: "antenna.radiowaves.left.and.right"
+                    ) {
+                        requestShare()
+                    }
+                    .disabled(tunnel.isTransitioning)
+                }
             }
         }
         .opacity(status.isTransitioning ? 0.5 : 1)

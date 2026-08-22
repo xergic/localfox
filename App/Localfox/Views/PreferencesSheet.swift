@@ -37,7 +37,7 @@ struct PreferencesSheet: View {
                 Text("Localfox Preferences")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.primaryText)
-                Text("Configure appearance and startup")
+                Text("Configure appearance, startup and sharing")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.secondaryText)
             }
@@ -54,8 +54,38 @@ struct PreferencesSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             appearanceSection
             generalSection
+            sharingSection
         }
         .padding(14)
+    }
+
+    private var sharingSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("SHARING", symbol: "antenna.radiowaves.left.and.right")
+            PreferencesCard {
+                @Bindable var sharing = state.sharing
+                PreferenceRow(
+                    title: "Rewrite the Host header",
+                    subtitle: "Needed by Vite and Next, wrong for Django ALLOWED_HOSTS and OAuth"
+                ) {
+                    Toggle("", isOn: $sharing.rewritesHostHeader)
+                        .labelsHidden()
+                        .toggleStyle(.checkbox)
+                }
+                CardDivider()
+                PreferenceRow(
+                    title: "Warn before sharing",
+                    subtitle: "Ask what a public tunnel exposes each time one is opened"
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { !sharing.warningAccepted },
+                        set: { sharing.warningAccepted = !$0 }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.checkbox)
+                }
+            }
+        }
     }
 
     private var appearanceSection: some View {

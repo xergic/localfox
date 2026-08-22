@@ -284,6 +284,7 @@ struct ServiceRow: View {
 
     @Environment(AppState.self) private var state
     @State private var isHovering = false
+    @State private var confirmsShare = false
 
     private var isSelected: Bool { selection?.wrappedValue == service.id }
     private var showsActions: Bool { showsHoverActions && (isHovering || forcesHover) }
@@ -310,6 +311,15 @@ struct ServiceRow: View {
             .padding(.trailing, reservedActionWidth)
 
             Spacer(minLength: 0)
+
+            // A public tunnel the user has forgotten is the failure that
+            // matters here, so it is marked at rest and not behind hover.
+            if tunnel != .off {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(shareTint)
+                    .help(shareHelp)
+            }
 
             StatusPill(text: status.label, tint: status.tint)
                 .fixedSize()
@@ -366,6 +376,19 @@ struct ServiceRow: View {
             withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
         }
         .contextMenu { menu }
+        .confirmationDialog(
+            "Share \(service.name) on the public internet?",
+            isPresented: $confirmsShare,
+            titleVisibility: .visible
+        ) {
+            Button("Share Publicly", role: .destructive) {
+                state.sharing.warningAccepted = true
+                Task { await state.share(service) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(SharingWarning.text)
+        }
         .opacity(status.isTransitioning ? 0.5 : 1)
     }
 
@@ -385,6 +408,7 @@ struct ServiceRow: View {
                 NSPasteboard.general.setString(url.absoluteString, forType: .string)
             }
         }
+        shareItems
         Button("Reveal in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([service.directory])
         }
@@ -402,6 +426,53 @@ struct ServiceRow: View {
     }
 
     private var status: ServiceStatus { state.status(of: service) }
+
+    private var tunnel: TunnelStatus { state.tunnel(of: service) }
+
+    /// Matches `ServiceStatus.tint`: green only when the tunnel is actually
+    /// carrying traffic, red when it failed. One tint for both would show a
+    /// healthy-looking antenna on a share that never opened.
+    private var shareTint: Color {
+        switch tunnel {
+        case .live: Theme.success
+        case .failed: Theme.danger
+        case .starting, .off: Theme.accentText
+        }
+    }
+
+    private var shareHelp: String {
+        switch tunnel {
+        case .off: "Not shared"
+        case .starting: "Opening a public tunnel…"
+        case let .live(url): "Shared publicly at \(url.absoluteString)"
+        case let .failed(message): "Sharing failed. \(message)"
+        }
+    }
+
+    @ViewBuilder
+    private var shareItems: some View {
+        if status.isRunning {
+            Divider()
+            if let url = state.publicURL(for: service) {
+                Button("Copy Public URL") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                }
+                Button("Stop Sharing") { Task { await state.unshare(service) } }
+            } else if !tunnel.isTransitioning {
+                Button("Share Publicly…") { requestShare() }
+            }
+        }
+    }
+
+    private func requestShare() {
+        guard status.isRunning else { return }
+        if state.sharing.warningAccepted {
+            Task { await state.share(service) }
+        } else {
+            confirmsShare = true
+        }
+    }
 
     /// A running service shows three actions, a stopped one shows two. Reserving
     /// the larger width always would cost the domain twenty points of a
