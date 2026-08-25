@@ -67,7 +67,17 @@ struct ServiceDetailPane: View {
                 }
             }
 
+            requestsCard
             logs
+        }
+        // Polls only while this pane is on screen, and restarts when the pane
+        // moves to another service. The access log is read over XPC, so a
+        // dashboard nobody is looking at must not pay for it.
+        .task(id: service.id) {
+            while !Task.isCancelled {
+                await state.refreshRequests(for: service)
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            }
         }
         .confirmationDialog(
             "Share \(service.name) on the public internet?",
@@ -189,6 +199,33 @@ struct ServiceDetailPane: View {
     }
 
     @ViewBuilder
+    private var requestsCard: some View {
+        let entries = state.requests(for: service)
+        DetailCard(title: "REQUESTS", symbol: "arrow.left.arrow.right") {
+            if !state.proxy.recordsRequests {
+                Text("Turn on Record requests in Preferences to see traffic here.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.tertiaryText)
+            } else if entries.isEmpty {
+                Text(status.isRunning ? "No requests yet." : "Start the service to see its requests.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.tertiaryText)
+            } else {
+                Scrollable(scrolls: scrolls) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Newest first: the reason to open this panel is always
+                        // the request that just happened.
+                        ForEach(entries.reversed()) { entry in
+                            RequestRow(entry: entry)
+                        }
+                    }
+                }
+                .frame(maxHeight: scrolls ? 200 : nil)
+            }
+        }
+    }
+
+    @ViewBuilder
     private var logs: some View {
         let text = state.log(for: service)
         DetailCard(title: "OUTPUT", symbol: "text.alignleft") {
@@ -223,6 +260,48 @@ struct ServiceDetailPane: View {
         case let .spawnFailed(code):
             "The command could not be started (errno \(code))."
         }
+    }
+}
+
+/// One handled request, as the access log recorded it.
+private struct RequestRow: View {
+    let entry: AccessLogEntry
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(entry.method)
+                .font(.mono(10, .medium))
+                .foregroundStyle(Theme.secondaryText)
+                .frame(width: 46, alignment: .leading)
+            Text(entry.uri)
+                .font(.lfSubtitle)
+                .foregroundStyle(Theme.primaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            Text("\(entry.milliseconds) ms")
+                .font(.mono(10))
+                .foregroundStyle(Theme.tertiaryText)
+            Text(Self.size(entry.size))
+                .font(.mono(10))
+                .foregroundStyle(Theme.tertiaryText)
+                .frame(width: 58, alignment: .trailing)
+            StatusPill(text: "\(entry.status)", tint: Self.tint(entry.statusClass))
+        }
+        .padding(.vertical, 3)
+    }
+
+    private static func tint(_ statusClass: AccessLogEntry.StatusClass) -> Color {
+        switch statusClass {
+        case .success: Theme.success
+        case .redirect: Theme.accentText
+        case .clientError, .other: Theme.secondaryText
+        case .serverError: Theme.danger
+        }
+    }
+
+    private static func size(_ bytes: Int) -> String {
+        bytes < 1_024 ? "\(bytes) B" : "\(bytes / 1_024) kB"
     }
 }
 

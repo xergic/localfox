@@ -51,7 +51,7 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
         }
     }
 
-    func setRoutes(_ routes: Data, reply: @escaping (String?) -> Void) {
+    func setRoutes(_ routes: Data, recordsRequests: Bool, reply: @escaping (String?) -> Void) {
         let decodedRoutes: [ProxyRoute]
         do {
             decodedRoutes = try JSONDecoder().decode([ProxyRoute].self, from: routes)
@@ -63,7 +63,7 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
         let reply = XPCReply(reply)
         Task {
             do {
-                try await runtime.setRoutes(decodedRoutes)
+                try await runtime.setRoutes(decodedRoutes, recordsRequests: recordsRequests)
                 reply.call(nil)
             } catch {
                 reply.call(Self.message(for: error))
@@ -145,6 +145,14 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
         let reply = XPCReply(reply)
         Task {
             reply.call(await runtime.caddyLog(lines: clampedLines))
+        }
+    }
+
+    func accessLog(lines: Int, reply: @escaping (String) -> Void) {
+        let clampedLines = HelperRequestValidator.clampLogLines(lines)
+        let reply = XPCReply(reply)
+        Task {
+            reply.call(await runtime.accessLog(lines: clampedLines))
         }
     }
 
@@ -235,15 +243,17 @@ private actor HelperRuntime {
         return CaddyProcessControl.isVerified(caddy.record)
     }
 
-    func setRoutes(_ routes: [ProxyRoute]) async throws {
+    func setRoutes(_ routes: [ProxyRoute], recordsRequests: Bool) async throws {
         let options = CaddyConfigBuilder.Options(
             storageRoot: layout.storageRoot.path,
             logPath: layout.logFile.path,
+            accessLogPath: layout.accessLog.path,
             adminSocketPath: layout.adminSocket.path,
             caID: layout.caID,
             caName: layout.caName
         )
-        let config = try CaddyConfigBuilder(options: options).build(routes: routes)
+        let config = try CaddyConfigBuilder(options: options)
+            .build(routes: routes, recordsRequests: recordsRequests)
 
         if isRunning() {
             try await adminClient.load(config: config)
@@ -320,8 +330,17 @@ private actor HelperRuntime {
     }
 
     func caddyLog(lines: Int) -> String {
+        tail(of: layout.logFile, lines: lines)
+    }
+
+    func accessLog(lines: Int) -> String {
+        tail(of: layout.accessLog, lines: lines)
+    }
+
+    /// The last `lines` of a log the app cannot open itself.
+    private func tail(of file: URL, lines: Int) -> String {
         guard lines > 0,
-              let handle = try? FileHandle(forReadingFrom: layout.logFile)
+              let handle = try? FileHandle(forReadingFrom: file)
         else { return "" }
         defer { try? handle.close() }
 
@@ -337,7 +356,7 @@ private actor HelperRuntime {
             if logLines.last?.isEmpty == true { logLines.removeLast() }
             return logLines.suffix(lines).joined(separator: "\n")
         } catch {
-            return "Could not read the Caddy log: \(error.localizedDescription)"
+            return "Could not read \(file.lastPathComponent): \(error.localizedDescription)"
         }
     }
 }

@@ -125,7 +125,7 @@ final class HelperClient {
         }
     }
 
-    func setRoutes(_ routes: [ProxyRoute]) async throws {
+    func setRoutes(_ routes: [ProxyRoute], recordsRequests: Bool) async throws {
         let encodedRoutes: Data
         do {
             encodedRoutes = try JSONEncoder().encode(routes)
@@ -136,7 +136,7 @@ final class HelperClient {
         }
 
         try await call(operation: "update proxy routes") { proxy, reply in
-            proxy.setRoutes(encodedRoutes) { message in
+            proxy.setRoutes(encodedRoutes, recordsRequests: recordsRequests) { message in
                 reply.resumeHelperResult(message)
             }
         }
@@ -189,6 +189,14 @@ final class HelperClient {
     func caddyLog(lines: Int) async throws -> String {
         try await call(operation: "read the proxy log") { proxy, reply in
             proxy.caddyLog(lines: lines) { log in
+                reply.resume(returning: log)
+            }
+        }
+    }
+
+    func accessLog(lines: Int) async throws -> String {
+        try await call(operation: "read the request log") { proxy, reply in
+            proxy.accessLog(lines: lines) { log in
                 reply.resume(returning: log)
             }
         }

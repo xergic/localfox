@@ -108,7 +108,10 @@ public enum HelperIdentity {
     /// Encoded rather than passed as objects because `NSXPCConnection` would
     /// otherwise need an allow-list of classes; `ProxyRoute` validates on decode,
     /// so a hand-crafted payload cannot survive the trip.
-    func setRoutes(_ routes: Data, reply: @escaping (String?) -> Void)
+    ///
+    /// - Parameter recordsRequests: Turns per-request logging on. A bool and not
+    ///   a log path, so the app still cannot name a file across this boundary.
+    func setRoutes(_ routes: Data, recordsRequests: Bool, reply: @escaping (String?) -> Void)
 
     /// Repoints one route at a new local port, leaving every sibling route,
     /// listener and cached certificate untouched.
@@ -130,6 +133,12 @@ public enum HelperIdentity {
 
     /// The last lines of Caddy's log, for the diagnostics pane.
     func caddyLog(lines: Int, reply: @escaping (String) -> Void)
+
+    /// The last lines of the access log, for the requests panel.
+    ///
+    /// Read through the helper for the same reason as `caddyLog`: the storage
+    /// root is `0700 root:admin`, so the app cannot open the file itself.
+    func accessLog(lines: Int, reply: @escaping (String) -> Void)
 }
 
 /// What the app knows about the helper right now.

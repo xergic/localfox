@@ -7,6 +7,7 @@ public struct CaddyConfigBuilder: Sendable {
         public let httpsPort: Int
         public let storageRoot: String
         public let logPath: String
+        public let accessLogPath: String
         public let adminSocketPath: String
         public let caID: String
         public let caName: String
@@ -16,6 +17,7 @@ public struct CaddyConfigBuilder: Sendable {
             httpsPort: Int = 443,
             storageRoot: String,
             logPath: String,
+            accessLogPath: String,
             adminSocketPath: String,
             caID: String,
             caName: String
@@ -24,11 +26,19 @@ public struct CaddyConfigBuilder: Sendable {
             self.httpsPort = httpsPort
             self.storageRoot = storageRoot
             self.logPath = logPath
+            self.accessLogPath = accessLogPath
             self.adminSocketPath = adminSocketPath
             self.caID = caID
             self.caName = caName
         }
     }
+
+    /// The logger Caddy names when access logging is on.
+    ///
+    /// `default_logger_name` is a suffix: Caddy emits under
+    /// `http.log.access.<name>`, and the log entry has to include exactly that.
+    static let accessLogName = "access"
+    static var accessLoggerName: String { "http.log.access.\(accessLogName)" }
 
     public let options: Options
 
@@ -37,10 +47,29 @@ public struct CaddyConfigBuilder: Sendable {
     }
 
     /// Returns pretty-printed JSON with sorted object keys for golden-file stability.
-    public func build(routes: [ProxyRoute]) throws -> Data {
+    ///
+    /// - Parameter recordsRequests: Writes one JSON line per request to
+    ///   `accessLogPath`. Off means the key is absent entirely rather than
+    ///   present and disabled, so a config built with it off carries no trace of
+    ///   the feature at all.
+    public func build(routes: [ProxyRoute], recordsRequests: Bool = false) throws -> Data {
         let sortedRoutes = routes.sorted { $0.id < $1.id }
         let domains = sortedRoutes.map { $0.domain.value }
         let httpsRoutes = sortedRoutes.map(makeHTTPSRoute) + [fallbackRoute()]
+        var httpsServer: [String: Any] = [
+            "listen": listeners(port: options.httpsPort),
+            "idle_timeout": "24h",
+            "routes": httpsRoutes,
+            "automatic_https": ["disable_redirects": true]
+        ]
+        if recordsRequests {
+            // Naming the logger is what routes access entries away from the
+            // default log. `should_log_credentials` is left at its default of
+            // false, which is why this file is safe to keep: it records the
+            // request line and the response, never an Authorization header or a
+            // cookie.
+            httpsServer["logs"] = ["default_logger_name": Self.accessLogName]
+        }
         let config: [String: Any] = [
             "admin": [
                 "listen": "unix/\(options.adminSocketPath)",
@@ -50,14 +79,7 @@ public struct CaddyConfigBuilder: Sendable {
                 "module": "file_system",
                 "root": options.storageRoot
             ],
-            "logging": [
-                "logs": [
-                    "default": [
-                        "writer": ["output": "file", "filename": options.logPath],
-                        "encoder": ["format": "json"]
-                    ]
-                ]
-            ],
+            "logging": ["logs": logs(recordsRequests: recordsRequests)],
             "apps": [
                 "http": [
                     // Without these, Caddy's automatic HTTPS logic uses the
@@ -74,12 +96,7 @@ public struct CaddyConfigBuilder: Sendable {
                             // own on top would bind a second listener.
                             "automatic_https": ["disable_redirects": true]
                         ],
-                        "https": [
-                            "listen": listeners(port: options.httpsPort),
-                            "idle_timeout": "24h",
-                            "routes": httpsRoutes,
-                            "automatic_https": ["disable_redirects": true]
-                        ]
+                        "https": httpsServer
                     ]
                 ],
                 "pki": [
@@ -101,6 +118,38 @@ public struct CaddyConfigBuilder: Sendable {
             ]
         ]
         return try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    /// The `logging.logs` table.
+    ///
+    /// The default log has to exclude the access logger as well as the access
+    /// log including it. Caddy sends an entry to every log whose filters accept
+    /// it, so without the exclusion every request also lands in `caddy.log` and
+    /// the diagnostics pane fills with traffic instead of proxy events.
+    private func logs(recordsRequests: Bool) -> [String: Any] {
+        var defaultLog: [String: Any] = [
+            "writer": ["output": "file", "filename": options.logPath],
+            "encoder": ["format": "json"]
+        ]
+        guard recordsRequests else { return ["default": defaultLog] }
+        defaultLog["exclude"] = [Self.accessLoggerName]
+        return [
+            "default": defaultLog,
+            Self.accessLogName: [
+                "include": [Self.accessLoggerName],
+                "encoder": ["format": "json"],
+                "writer": [
+                    "output": "file",
+                    "filename": options.accessLogPath,
+                    // Explicit rather than inherited. Caddy's default keeps ten
+                    // 100 MB files, which is a gigabyte of request lines for a
+                    // panel that only ever shows the last few hundred.
+                    "roll": true,
+                    "roll_size_mb": 10,
+                    "roll_keep": 2
+                ]
+            ]
+        ]
     }
 
     public static func upstreamAdminPath(for route: ProxyRoute) -> String {

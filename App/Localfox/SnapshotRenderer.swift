@@ -116,7 +116,7 @@ enum SnapshotRenderer {
 
         do {
             print("pushing \(route.domain) -> 127.0.0.1:\(route.port)")
-            try await state.helperClient.setRoutes([route])
+            try await state.helperClient.setRoutes([route], recordsRequests: state.proxy.recordsRequests)
             print("setRoutes: OK")
         } catch {
             print("setRoutes failed: \(error.localizedDescription)")

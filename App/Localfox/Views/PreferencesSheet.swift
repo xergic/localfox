@@ -54,9 +54,34 @@ struct PreferencesSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             appearanceSection
             generalSection
+            proxySection
             sharingSection
         }
         .padding(14)
+    }
+
+    private var proxySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("PROXY", symbol: "arrow.left.arrow.right")
+            PreferencesCard {
+                PreferenceRow(
+                    title: "Record requests",
+                    subtitle: "Log method, path, status and duration. Never headers or cookies"
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { state.proxy.recordsRequests },
+                        // The proxy only learns about this through a route sync,
+                        // so the write and the sync are one action.
+                        set: { enabled in
+                            state.proxy.recordsRequests = enabled
+                            Task { await state.syncProxy() }
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.checkbox)
+                }
+            }
+        }
     }
 
     private var sharingSection: some View {

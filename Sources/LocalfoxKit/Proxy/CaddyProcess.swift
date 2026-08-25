@@ -38,6 +38,15 @@ public struct CaddyLayout: Hashable, Sendable {
         self.caName = caName
     }
 
+    /// Where per-request access logging lands, next to the proxy's own log.
+    ///
+    /// Computed rather than stored because it is always the sibling of
+    /// `logFile`, and a layout that could put the two in different places would
+    /// only be a way to get one of them wrong.
+    public var accessLog: URL {
+        logFile.deletingLastPathComponent().appendingPathComponent("access.log")
+    }
+
     /// Where this layout's generated root certificate lands.
     public var rootCertificate: URL {
         storageRoot.appendingPathComponent("pki/authorities/\(caID)/root.crt")

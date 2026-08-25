@@ -9,6 +9,7 @@ struct CaddyConfigBuilderTests {
         httpsPort: 8443,
         storageRoot: "/var/db/localfox/caddy",
         logPath: "/var/log/localfox/caddy.log",
+        accessLogPath: "/var/log/localfox/access.log",
         adminSocketPath: "/var/run/localfox/caddy.sock",
         caID: "localfox",
         caName: "Localfox Local CA"
@@ -216,6 +217,83 @@ struct CaddyConfigBuilderTests {
         """#)
     }
 
+    /// A golden of the subtree that changes, rather than a second copy of the
+    /// whole config: everything outside `logging` and the https server's `logs`
+    /// is already covered by the golden above, and duplicating it would only
+    /// give two places to update for an unrelated change.
+    @Test("recording requests has stable golden JSON for the parts it changes")
+    func goldenAccessLogJSON() throws {
+        let config = try decoded(recordsRequests: true)
+        let logging = try #require(config["logging"])
+        #expect(try pretty(logging) == #"""
+        {
+          "logs" : {
+            "access" : {
+              "encoder" : {
+                "format" : "json"
+              },
+              "include" : [
+                "http.log.access.access"
+              ],
+              "writer" : {
+                "filename" : "\/var\/log\/localfox\/access.log",
+                "output" : "file",
+                "roll" : true,
+                "roll_keep" : 2,
+                "roll_size_mb" : 10
+              }
+            },
+            "default" : {
+              "encoder" : {
+                "format" : "json"
+              },
+              "exclude" : [
+                "http.log.access.access"
+              ],
+              "writer" : {
+                "filename" : "\/var\/log\/localfox\/caddy.log",
+                "output" : "file"
+              }
+            }
+          }
+        }
+        """#)
+
+        let logs = try #require(try httpsServer(in: config)["logs"])
+        #expect(try pretty(logs) == #"""
+        {
+          "default_logger_name" : "access"
+        }
+        """#)
+    }
+
+    /// Caddy sends an entry to every log whose filters accept it, so without the
+    /// exclusion every request also lands in caddy.log and the diagnostics pane
+    /// fills with traffic instead of proxy events.
+    @Test("the default log excludes exactly what the access log includes")
+    func partitionsTheTwoLogs() throws {
+        let logs = try #require(try decoded(recordsRequests: true)["logging"] as? [String: Any])
+        let table = try #require(logs["logs"] as? [String: [String: Any]])
+        #expect(table["access"]?["include"] as? [String] == ["http.log.access.access"])
+        #expect(table["default"]?["exclude"] as? [String] == ["http.log.access.access"])
+    }
+
+    /// Off means absent, not present and disabled. A config built with recording
+    /// off must carry no trace of the feature at all.
+    @Test("recording off leaves no logger, no exclusion and no access file")
+    func recordingOffLeavesNoTrace() throws {
+        let config = try decoded()
+        #expect(try httpsServer(in: config)["logs"] == nil)
+        let logging = try #require(config["logging"] as? [String: Any])
+        let table = try #require(logging["logs"] as? [String: [String: Any]])
+        #expect(table.keys.sorted() == ["default"])
+        #expect(table["default"]?["exclude"] == nil)
+        let json = try #require(String(
+            data: CaddyConfigBuilder(options: options).build(routes: routes), encoding: .utf8
+        ))
+        #expect(!json.contains("access.log"))
+    }
+
     @Test("identical routes produce identical bytes regardless of input order")
     func isDeterministic() throws {
         let builder = CaddyConfigBuilder(options: options)
@@ -315,9 +393,24 @@ struct CaddyConfigBuilderTests {
         }
     }
 
-    private func decoded() throws -> [String: Any] {
-        let data = try CaddyConfigBuilder(options: options).build(routes: routes)
+    private func decoded(recordsRequests: Bool = false) throws -> [String: Any] {
+        let data = try CaddyConfigBuilder(options: options)
+            .build(routes: routes, recordsRequests: recordsRequests)
         let object = try JSONSerialization.jsonObject(with: data)
         return try #require(object as? [String: Any])
+    }
+
+    private func httpsServer(in config: [String: Any]) throws -> [String: Any] {
+        let apps = try #require(config["apps"] as? [String: Any])
+        let http = try #require(apps["http"] as? [String: Any])
+        let servers = try #require(http["servers"] as? [String: Any])
+        return try #require(servers["https"] as? [String: Any])
+    }
+
+    private func pretty(_ object: Any) throws -> String {
+        let data = try JSONSerialization.data(
+            withJSONObject: object, options: [.prettyPrinted, .sortedKeys]
+        )
+        return try #require(String(data: data, encoding: .utf8))
     }
 }

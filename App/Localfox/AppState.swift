@@ -25,6 +25,7 @@ final class AppState {
     let helperClient = HelperClient()
     let appearance = Appearance()
     let sharing = SharingPreferences()
+    let proxy = ProxyPreferences()
 
     /// Held here rather than in the dashboard's own state, because the popover
     /// asks for the sheet on a window that does not exist yet.
@@ -34,6 +35,12 @@ final class AppState {
     private(set) var lastError: String?
 
     private(set) var logs: [UUID: String] = [:]
+    /// Recent requests per service, parsed from the proxy's access log.
+    ///
+    /// Not persisted and not part of `statuses`, for the same reason a status is
+    /// not part of a `Service`: this is a view of a file the helper owns, and it
+    /// is only ever filled while something is looking at it.
+    private(set) var requests: [UUID: [AccessLogEntry]] = [:]
 
     private let store: ProjectStore
     private let resolver = ShellEnvironmentResolver()
@@ -179,6 +186,38 @@ final class AppState {
         await refreshTrust()
     }
 
+    /// Reloads the request list for one service.
+    ///
+    /// Reads the whole tail once and filters by host, because one access log
+    /// holds every route. Called on a timer only while a detail pane is open, so
+    /// a dashboard nobody is looking at costs no XPC traffic.
+    func refreshRequests(for service: Service) async {
+        guard proxy.recordsRequests, helperClient.state.canServe else {
+            assignRequests([], for: service.id)
+            return
+        }
+        guard let tail = try? await helperClient.accessLog(lines: Self.requestLogLines) else { return }
+        assignRequests(
+            AccessLogEntry.parse(tail: tail, host: service.domain.value, limit: Self.requestLimit),
+            for: service.id
+        )
+    }
+
+    /// Enough lines that a busy service still fills the panel after the other
+    /// services on the machine have interleaved their own requests into the file.
+    private static let requestLogLines = 2_000
+    private static let requestLimit = 100
+
+    private func assignRequests(_ entries: [AccessLogEntry], for id: UUID) {
+        let resolved: [AccessLogEntry]? = entries.isEmpty ? nil : entries
+        guard requests[id] != resolved else { return }
+        requests[id] = resolved
+    }
+
+    func requests(for service: Service) -> [AccessLogEntry] {
+        requests[service.id] ?? []
+    }
+
     /// Pushes the current service ports to the proxy. Only running services have
     /// a port, so a stopped one is simply absent from the table.
     func syncProxy() async {
@@ -196,7 +235,7 @@ final class AppState {
             }
         }
         do {
-            try await helperClient.setRoutes(routes)
+            try await helperClient.setRoutes(routes, recordsRequests: proxy.recordsRequests)
         } catch {
             assign(\.lastError, error.localizedDescription)
         }
@@ -370,6 +409,7 @@ final class AppState {
             statuses[service.id] = nil
             logs[service.id] = nil
             tunnels[service.id] = nil
+            requests[service.id] = nil
         }
         await syncProxy()
     }
@@ -547,28 +587,5 @@ final class AppState {
 
     func clearError() {
         assign(\.lastError, nil)
-    }
-}
-
-extension ServiceStatus {
-    /// Uses the existing palette rather than inventing an indicator: Portfox has
-    /// no running/stopped dot because it only ever lists running things.
-    var tint: Color {
-        switch self {
-        case .running: Theme.success
-        case .starting, .stopping: Theme.accentText
-        case .failed: Theme.danger
-        case .stopped: Theme.secondaryText
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .stopped: "Stopped"
-        case .starting: "Starting"
-        case let .running(_, port): ":\(port)"
-        case .stopping: "Stopping"
-        case .failed: "Failed"
-        }
     }
 }

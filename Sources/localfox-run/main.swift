@@ -213,6 +213,7 @@ enum CLI {
             httpsPort: 8443,
             storageRoot: layout.storageRoot.path,
             logPath: layout.logFile.path,
+            accessLogPath: layout.accessLog.path,
             adminSocketPath: layout.adminSocket.path,
             caID: layout.caID,
             caName: layout.caName
@@ -235,6 +236,7 @@ enum CLI {
             httpsPort: 8443,
             storageRoot: layout.storageRoot.path,
             logPath: layout.logFile.path,
+            accessLogPath: layout.accessLog.path,
             adminSocketPath: layout.adminSocket.path,
             caID: layout.caID,
             caName: layout.caName
