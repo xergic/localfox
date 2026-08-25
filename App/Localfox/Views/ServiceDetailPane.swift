@@ -9,6 +9,13 @@ struct ServiceDetailPane: View {
 
     @Environment(AppState.self) private var state
     @State private var confirmsShare = false
+    /// Which share the user asked for, held across the confirmation.
+    @State private var pendingMode: ShareMode = .quick
+
+    enum ShareMode {
+        case quick
+        case named
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -87,7 +94,7 @@ struct ServiceDetailPane: View {
             Button("Share Publicly", role: .destructive) { confirmedShare() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(SharingWarning.text)
+            Text(pendingMode == .named ? SharingWarning.namedText : SharingWarning.text)
         }
     }
 
@@ -117,18 +124,30 @@ struct ServiceDetailPane: View {
 
     private func confirmedShare() {
         state.sharing.warningAccepted = true
-        Task { await state.share(service) }
+        Task { await start(pendingMode) }
     }
 
     /// Skips the dialog once the user has accepted it, because a warning shown
     /// every time is a warning nobody reads.
-    private func requestShare() {
+    private func requestShare(_ mode: ShareMode) {
         guard status.isRunning else { return }
+        pendingMode = mode
         if state.sharing.warningAccepted {
-            Task { await state.share(service) }
+            Task { await start(mode) }
         } else {
             confirmsShare = true
         }
+    }
+
+    private func start(_ mode: ShareMode) async {
+        switch mode {
+        case .quick: await state.share(service)
+        case .named: await state.shareNamed(service)
+        }
+    }
+
+    private var hasNamedTunnel: Bool {
+        state.tunnelTargets.isConfigured(service.id)
     }
 
     private var portDescription: String {
@@ -184,12 +203,21 @@ struct ServiceDetailPane: View {
                     ) {
                         Task { await state.unshare(service) }
                     }
+                } else if hasNamedTunnel {
+                    // A menu only once there is a choice to make. With no named
+                    // tunnel configured there is exactly one thing Share can do,
+                    // and a one-item menu is a button with an extra click.
+                    ShareMenu(
+                        isTransitioning: tunnel.isTransitioning,
+                        onQuick: { requestShare(.quick) },
+                        onNamed: { requestShare(.named) }
+                    )
                 } else {
                     ActionButton(
                         title: tunnel.isTransitioning ? "Sharing…" : "Share",
                         symbol: "antenna.radiowaves.left.and.right"
                     ) {
-                        requestShare()
+                        requestShare(.quick)
                     }
                     .disabled(tunnel.isTransitioning)
                 }
@@ -260,6 +288,42 @@ struct ServiceDetailPane: View {
         case let .spawnFailed(code):
             "The command could not be started (errno \(code))."
         }
+    }
+}
+
+/// Share, with the two tunnel kinds behind it.
+private struct ShareMenu: View {
+    let isTransitioning: Bool
+    let onQuick: () -> Void
+    let onNamed: () -> Void
+
+    var body: some View {
+        Menu {
+            Button("Quick Tunnel", action: onQuick)
+            Button("Named Tunnel", action: onNamed)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 11, weight: .medium))
+                Text(isTransitioning ? "Sharing…" : "Share")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(Theme.primaryText)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Theme.pill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(Theme.border, lineWidth: 1)
+                    )
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(isTransitioning)
     }
 }
 

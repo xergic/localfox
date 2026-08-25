@@ -26,6 +26,7 @@ final class AppState {
     let appearance = Appearance()
     let sharing = SharingPreferences()
     let proxy = ProxyPreferences()
+    let tunnelTargets = TunnelTargets()
 
     /// Held here rather than in the dashboard's own state, because the popover
     /// asks for the sheet on a window that does not exist yet.
@@ -45,7 +46,9 @@ final class AppState {
     private let store: ProjectStore
     private let resolver = ShellEnvironmentResolver()
     private var runtime: ServiceRuntime?
-    private var tunnelRuntime: TunnelRuntime?
+    /// Not private only because the sharing half of `AppState` lives in
+    /// `AppState+Sharing.swift`. Nothing outside this type touches it.
+    var tunnelRuntime: TunnelRuntime?
 
     init(store: ProjectStore = ProjectStore()) {
         self.store = store
@@ -318,38 +321,6 @@ final class AppState {
         await runtime?.stopAll()
     }
 
-    // MARK: - Public sharing
-
-    /// Opens a public tunnel to a running service.
-    ///
-    /// Requires a discovered port, so this is only reachable once the status is
-    /// `.running`. Under Auto the port does not exist until the dev server has
-    /// bound it, and a tunnel to a port nothing is listening on serves 502s
-    /// under a URL the user has already sent to somebody.
-    func share(_ service: Service) async {
-        guard let tunnelRuntime,
-              case let .running(pid, port) = status(of: service) else { return }
-        await tunnelRuntime.start(
-            serviceID: service.id,
-            port: port,
-            // `ServiceRuntime` spawns with SETSID, so the pid is the group.
-            originGroup: pid,
-            rewriteHost: sharing.rewritesHostHeader
-        )
-    }
-
-    func unshare(_ service: Service) async {
-        await tunnelRuntime?.stop(service.id)
-    }
-
-    func tunnel(of service: Service) -> TunnelStatus {
-        tunnels[service.id] ?? .off
-    }
-
-    func publicURL(for service: Service) -> URL? {
-        tunnel(of: service).url
-    }
-
     func log(for service: Service) -> String {
         logs[service.id] ?? ""
     }
@@ -410,6 +381,7 @@ final class AppState {
             logs[service.id] = nil
             tunnels[service.id] = nil
             requests[service.id] = nil
+            tunnelTargets.clearNamed(for: service.id)
         }
         await syncProxy()
     }
@@ -529,7 +501,7 @@ final class AppState {
     ///
     /// `@Observable` notifies on an equal write too, so a blind assignment on a
     /// poll tick redraws every view that reads the property.
-    private func assign<Value: Equatable>(
+    func assign<Value: Equatable>(
         _ keyPath: ReferenceWritableKeyPath<AppState, Value>,
         _ value: Value
     ) {

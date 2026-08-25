@@ -1,6 +1,6 @@
 import Foundation
 
-/// Builds the `cloudflared` invocation for a quick tunnel. Pure.
+/// Builds the `cloudflared` invocations Localfox uses. Pure.
 public enum CloudflaredCommand {
     /// The loopback address the tunnel dials.
     ///
@@ -56,15 +56,56 @@ public enum CloudflaredCommand {
             executable: binary.path,
             arguments: arguments,
             workingDirectory: workingDirectory,
-            // Deliberately minimal, and deliberately not the user's login
-            // environment. cloudflared reads TUNNEL_* variables for every flag
-            // it takes, so inheriting a shell that exports TUNNEL_TOKEN or
-            // TUNNEL_URL would silently run a different tunnel than the one the
-            // user asked to share.
-            environment: [
-                "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
-                "PATH": "/usr/bin:/bin"
-            ]
+            environment: environment()
         )
+    }
+
+    /// Runs a tunnel the user created in the Cloudflare dashboard.
+    ///
+    /// There is no `--url` and no `--http-host-header` here, and adding them
+    /// would be a lie. A tunnel run from a token is managed remotely, so its
+    /// origin and its Host header come from the dashboard and cloudflared
+    /// ignores the local flags outright. That is why a named share needs a fixed
+    /// port: the port is written down in Cloudflare, not here.
+    public static func named(
+        binary: URL,
+        token: String,
+        workingDirectory: URL = FileManager.default.temporaryDirectory
+    ) -> SpawnRequest {
+        SpawnRequest(
+            executable: binary.path,
+            arguments: [
+                binary.path,
+                "tunnel",
+                // Same reason as the quick path: an `ingress:` block in the
+                // user's config.yml takes precedence and would publish a
+                // hostname pointing somewhere they never shared.
+                "--config", "/dev/null",
+                "--no-autoupdate",
+                "--loglevel", "info",
+                "run"
+            ],
+            workingDirectory: workingDirectory,
+            // The token goes in the environment and never in argv. Arguments are
+            // world-readable through `ps`, and this one is a bearer credential
+            // for the user's Cloudflare tunnel.
+            environment: environment(extra: ["TUNNEL_TOKEN": token])
+        )
+    }
+
+    /// Deliberately minimal, and deliberately not the user's login environment.
+    ///
+    /// cloudflared reads a TUNNEL_* variable for nearly every flag it takes, so
+    /// inheriting a shell that exports `TUNNEL_TOKEN` or `TUNNEL_URL` would
+    /// silently run a different tunnel than the one the user asked to share.
+    /// Anything Localfox does want to set goes through `extra`, which is what
+    /// keeps that guarantee true rather than merely intended.
+    private static func environment(extra: [String: String] = [:]) -> [String: String] {
+        var environment = [
+            "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
+            "PATH": "/usr/bin:/bin"
+        ]
+        environment.merge(extra) { _, new in new }
+        return environment
     }
 }

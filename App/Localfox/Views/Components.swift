@@ -209,3 +209,31 @@ struct LabelledField: View {
         }
     }
 }
+
+/// `LabelledField` for a secret, so a token is never drawn as itself.
+struct SecureLabelledField: View {
+    let label: String
+    @Binding var text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.secondaryText)
+            SecureField("", text: $text)
+                .textFieldStyle(.plain)
+                .font(.lfSubtitle)
+                .foregroundStyle(Theme.primaryText)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Theme.background)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(Theme.border, lineWidth: 1)
+                        )
+                )
+        }
+    }
+}

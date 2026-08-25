@@ -1,0 +1,64 @@
+import Foundation
+import LocalfoxKit
+
+/// The public sharing half of `AppState`.
+///
+/// Split off so neither file grows past the point where the state and the
+/// tunnel lifecycle can be read in one sitting. Everything here still runs on
+/// the main actor and still goes through the same `assign` write guard.
+@MainActor
+extension AppState {
+    // MARK: - Public sharing
+
+    /// Opens a public tunnel to a running service.
+    ///
+    /// Requires a discovered port, so this is only reachable once the status is
+    /// `.running`. Under Auto the port does not exist until the dev server has
+    /// bound it, and a tunnel to a port nothing is listening on serves 502s
+    /// under a URL the user has already sent to somebody.
+    func share(_ service: Service) async {
+        guard case let .running(_, port) = status(of: service) else { return }
+        await share(service, plan: .quick(port: port, rewritesHost: sharing.rewritesHostHeader))
+    }
+
+    /// Opens the named tunnel configured for this service.
+    ///
+    /// Refuses an Auto service rather than starting anyway. A tunnel run from a
+    /// token takes its origin from the Cloudflare dashboard, so the port is
+    /// written down there; under Auto the dev server can bind a different one
+    /// and the share would point at whatever last held it.
+    func shareNamed(_ service: Service) async {
+        guard let target = tunnelTargets.named(for: service.id),
+              let token = tunnelTargets.token(for: service.id) else {
+            assign(\.lastError, SharingWarning.namedTunnelUnconfigured(service))
+            return
+        }
+        guard service.portMode.fixedValue != nil else {
+            assign(\.lastError, SharingWarning.namedTunnelNeedsFixedPort(service))
+            return
+        }
+        await share(service, plan: .named(token: token, hostname: target.hostname))
+    }
+
+    private func share(_ service: Service, plan: TunnelPlan) async {
+        guard let tunnelRuntime, case let .running(pid, _) = status(of: service) else { return }
+        await tunnelRuntime.start(
+            serviceID: service.id,
+            plan: plan,
+            // `ServiceRuntime` spawns with SETSID, so the pid is the group.
+            originGroup: pid
+        )
+    }
+
+    func unshare(_ service: Service) async {
+        await tunnelRuntime?.stop(service.id)
+    }
+
+    func tunnel(of service: Service) -> TunnelStatus {
+        tunnels[service.id] ?? .off
+    }
+
+    func publicURL(for service: Service) -> URL? {
+        tunnel(of: service).url
+    }
+}

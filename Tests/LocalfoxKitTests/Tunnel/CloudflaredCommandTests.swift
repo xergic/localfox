@@ -69,4 +69,46 @@ struct CloudflaredCommandTests {
         #expect(environment.keys.sorted() == ["HOME", "PATH"])
         #expect(!environment.keys.contains { $0.hasPrefix("TUNNEL_") })
     }
+
+    // MARK: - Named tunnels
+
+    private var named: SpawnRequest {
+        CloudflaredCommand.named(binary: binary, token: "eyJhIjoiMSJ9")
+    }
+
+    /// Arguments are world-readable through `ps`, and a tunnel token is a bearer
+    /// credential for the user's Cloudflare account.
+    @Test("the token travels in the environment, never in argv")
+    func keepsTheTokenOutOfArgv() {
+        #expect(!named.arguments.contains { $0.contains("eyJhIjoiMSJ9") })
+        #expect(named.environment["TUNNEL_TOKEN"] == "eyJhIjoiMSJ9")
+        #expect(named.environment.keys.sorted() == ["HOME", "PATH", "TUNNEL_TOKEN"])
+    }
+
+    @Test("a named run is still isolated from the user's cloudflared config")
+    func namedIsolatesUserConfig() throws {
+        let arguments = named.arguments
+        let config = try #require(arguments.firstIndex(of: "--config"))
+        #expect(arguments[arguments.index(after: config)] == "/dev/null")
+        let run = try #require(arguments.firstIndex(of: "run"))
+        // urfave/cli takes the tunnel command's own flags before the subcommand,
+        // so --config after `run` would be rejected outright.
+        #expect(config < run)
+    }
+
+    /// A tunnel run from a token is managed remotely: Cloudflare owns the origin
+    /// and the Host header, and passing either here would be a flag cloudflared
+    /// silently ignores.
+    @Test("a named run passes no origin and no host rewrite")
+    func namedPassesNoOrigin() {
+        #expect(!named.arguments.contains("--url"))
+        #expect(!named.arguments.contains("--http-host-header"))
+    }
+
+    @Test("a named run disables autoupdate and names the binary as argv zero")
+    func namedMatchesTheQuickShape() {
+        #expect(named.arguments.contains("--no-autoupdate"))
+        #expect(named.executable == binary.path)
+        #expect(named.arguments.first == binary.path)
+    }
 }

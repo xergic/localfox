@@ -15,6 +15,9 @@ actor TunnelRuntime {
     /// What Localfox knows about one open tunnel.
     private struct Running {
         let process: SpawnedProcess
+        /// Which of the two modes this is, because the log says different things
+        /// about each one and only the quick one carries its address in there.
+        let plan: TunnelPlan
         /// The process group of the dev server this tunnel dials.
         ///
         /// Held so the tunnel can notice the origin dying on its own. Nothing
@@ -69,7 +72,7 @@ actor TunnelRuntime {
 
     // MARK: - Starting
 
-    func start(serviceID: UUID, port: Int, originGroup: pid_t, rewriteHost: Bool) async {
+    func start(serviceID: UUID, plan: TunnelPlan, originGroup: pid_t) async {
         guard running[serviceID] == nil else { return }
         onStatus(serviceID, .starting)
 
@@ -81,9 +84,15 @@ actor TunnelRuntime {
             return
         }
 
-        let request = CloudflaredCommand.request(
-            binary: binary, port: port, rewriteHost: rewriteHost
-        )
+        let request: SpawnRequest
+        switch plan {
+        case let .quick(port, rewritesHost):
+            request = CloudflaredCommand.request(
+                binary: binary, port: port, rewriteHost: rewritesHost
+            )
+        case let .named(token, _):
+            request = CloudflaredCommand.named(binary: binary, token: token)
+        }
 
         let process: SpawnedProcess
         do {
@@ -98,7 +107,11 @@ actor TunnelRuntime {
         generations += 1
         let generation = generations
         running[serviceID] = Running(
-            process: process, originGroup: originGroup, generation: generation, log: LogBuffer()
+            process: process,
+            plan: plan,
+            originGroup: originGroup,
+            generation: generation,
+            log: LogBuffer()
         )
         running[serviceID]?.drain = drainOutput(of: process, for: serviceID)
         running[serviceID]?.watch = watch(serviceID: serviceID, generation: generation)
@@ -189,14 +202,25 @@ actor TunnelRuntime {
         guard let record = current(id, generation) else { return .gone }
 
         let text = record.log.text
-        // Failure before URL. The failure message names the API endpoint cloudflared
-        // could not reach, which is itself a trycloudflare.com host, so checking the
-        // other way round reports a dead share as live.
-        if let failure = QuickTunnelParser.failure(in: text) {
-            return .failed(TunnelError.reported(failure).localizedDescription)
+        switch record.plan {
+        case .quick:
+            // Failure before URL. The failure message names the API endpoint
+            // cloudflared could not reach, which is itself a trycloudflare.com
+            // host, so checking the other way round reports a dead share as live.
+            if let failure = QuickTunnelParser.failure(in: text) {
+                return .failed(TunnelError.reported(failure).localizedDescription)
+            }
+            if let url = QuickTunnelParser.publicURL(in: text) { return .resolved(url) }
+        case let .named(_, hostname):
+            if let failure = NamedTunnelParser.failure(in: text) {
+                return .failed(TunnelError.reported(failure).localizedDescription)
+            }
+            // The hostname is the one the user configured, so the only question
+            // is whether the tunnel registered. Reporting it before that would
+            // hand out an address that answers 502 from Cloudflare's edge.
+            if NamedTunnelParser.isConnected(in: text) { return .resolved(hostname) }
         }
-        if let url = QuickTunnelParser.publicURL(in: text) { return .resolved(url) }
-        // The process can die before it ever prints a URL, and nothing else
+        // The process can die before it ever reports anything, and nothing else
         // would notice: a tunnel binds no port to poll, so without this the
         // interface sits on "Starting" until the timeout.
         guard ProcessSpawner.isAlive(record.process.processGroup) else {

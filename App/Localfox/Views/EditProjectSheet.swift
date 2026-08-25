@@ -27,6 +27,14 @@ struct EditProjectSheet: View {
         _rows = State(initialValue: project.services.map(EditableService.init))
     }
 
+    /// A token that is already saved is shown as this and never as itself.
+    ///
+    /// Reading a stored credential back into a text field only to write it
+    /// straight back puts it in the view hierarchy for no gain. A row that still
+    /// holds the placeholder is a row the user did not touch, which is how `save`
+    /// knows to leave the Keychain alone.
+    static let tokenPlaceholder = "••••••••"
+
     /// A service the user is still editing. Separate from `Service` so a
     /// half-typed domain never has to be a valid `LocalDomain`.
     struct EditableService: Identifiable {
@@ -36,6 +44,13 @@ struct EditProjectSheet: View {
         var domain: String
         let directory: URL
         let framework: ServiceType
+        /// The public hostname of a named Cloudflare tunnel, or blank for none.
+        var namedHostname = ""
+        var namedToken = ""
+        /// Whether this service can use a named tunnel at all. Cloudflare owns
+        /// the origin for one, so the port has to be written down rather than
+        /// discovered.
+        let hasFixedPort: Bool
         /// What the domain was when the sheet opened. A rename only moves a row
         /// still sitting on its generated name, and this is how that is judged.
         let originalDomain: String
@@ -48,6 +63,7 @@ struct EditProjectSheet: View {
             directory = service.directory
             framework = service.framework
             originalDomain = service.domain.value
+            hasFixedPort = service.portMode.fixedValue != nil
         }
     }
 
@@ -70,6 +86,7 @@ struct EditProjectSheet: View {
         .frame(width: 620, height: 560)
         .background(Theme.background)
         .themedSurface(state.appearance.colorScheme)
+        .onAppear(perform: loadTunnelTargets)
         .alert("Restart to use the new domain?", isPresented: $isConfirmingRestart) {
             Button("Not Now", role: .cancel) { dismiss() }
             Button("Restart") {
@@ -151,6 +168,18 @@ struct EditProjectSheet: View {
         .padding(.vertical, 12)
     }
 
+    /// Reads what is already configured, without ever reading the token itself.
+    private func loadTunnelTargets() {
+        for index in rows.indices {
+            let id = rows[index].id
+            guard let target = state.tunnelTargets.named(for: id) else { continue }
+            rows[index].namedHostname = target.hostname.host ?? target.hostname.absoluteString
+            rows[index].namedToken = state.tunnelTargets.token(for: id) == nil
+                ? ""
+                : Self.tokenPlaceholder
+        }
+    }
+
     // MARK: - Renaming
 
     /// Suggests, never forces. A domain the user typed is theirs, and a rename
@@ -209,6 +238,8 @@ struct EditProjectSheet: View {
             return updated
         }
 
+        saveTunnelTargets()
+
         Task {
             let moved = await state.apply(edited)
             guard !moved.isEmpty else {
@@ -217,6 +248,25 @@ struct EditProjectSheet: View {
             }
             pendingRestarts = moved
             isConfirmingRestart = true
+        }
+    }
+
+    /// A blank hostname clears both halves, because a token kept for a share
+    /// that can never start is a credential held for nothing.
+    private func saveTunnelTargets() {
+        for row in rows {
+            let hostname = row.namedHostname.trimmingCharacters(in: .whitespaces)
+            guard !hostname.isEmpty else {
+                state.tunnelTargets.clearNamed(for: row.id)
+                continue
+            }
+            state.tunnelTargets.setNamed(
+                hostname: hostname,
+                // nil leaves the stored token untouched, which is what an
+                // unedited placeholder means.
+                token: row.namedToken == Self.tokenPlaceholder ? nil : row.namedToken,
+                for: row.id
+            )
         }
     }
 
@@ -254,8 +304,53 @@ private struct ServiceEditor: View {
                 CardDivider()
                 LabelledField(label: "Command", text: $row.command, monospaced: true)
                 LabelledField(label: "Domain", text: $row.domain, monospaced: true, error: fieldError)
+                CardDivider()
+                sharing
             }
         }
+    }
+
+    /// The named tunnel, which is configuration rather than a project fact: the
+    /// hostname lives in preferences and the token in the Keychain, so neither
+    /// travels with a copied project.
+    @ViewBuilder
+    private var sharing: some View {
+        Text("PUBLIC SHARING")
+            .font(.lfSection)
+            .kerning(0.8)
+            .foregroundStyle(Theme.tertiaryText)
+        LabelledField(
+            label: "Cloudflare hostname",
+            text: $row.namedHostname,
+            monospaced: true,
+            error: hostnameError
+        )
+        SecureLabelledField(label: "Tunnel token", text: $row.namedToken)
+        Text(hint)
+            .font(.system(size: 10))
+            .foregroundStyle(Theme.tertiaryText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var hostnameError: String? {
+        let trimmed = row.namedHostname.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if TunnelTargets.url(from: trimmed) == nil { return "Must be a public hostname" }
+        return row.hasFixedPort ? nil : "Needs a fixed port"
+    }
+
+    private var hint: String {
+        guard row.hasFixedPort else {
+            return """
+            A named tunnel takes its origin from your Cloudflare dashboard, so \
+            this service needs a fixed port to point it at.
+            """
+        }
+        return """
+        Create the tunnel in Cloudflare Zero Trust, point its public hostname \
+        at http://localhost:<port>, then paste the tunnel token here. Leave \
+        the hostname blank to remove it.
+        """
     }
 
     private var fieldError: String? {

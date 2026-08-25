@@ -66,7 +66,10 @@ public enum QuickTunnelParser {
     /// Strips the timestamp and level so the interface shows the sentence and
     /// not the log furniture. Prefers cloudflared's own `error=` field, which is
     /// the part that says what actually went wrong.
-    private static func message(from line: String) -> String {
+    ///
+    /// Shared with `NamedTunnelParser`: both read the same zerolog output, and
+    /// two copies of this would drift the moment one of them met a new shape.
+    static func message(from line: String) -> String {
         if let range = line.range(of: "error=\"") {
             return unquoted(line[range.upperBound...])
         }
