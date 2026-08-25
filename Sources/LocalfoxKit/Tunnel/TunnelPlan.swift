@@ -15,12 +15,15 @@ public enum TunnelPlan: Sendable, Equatable {
     /// No port. A tunnel run from a token is managed remotely, so the origin
     /// lives in the dashboard and Localfox cannot change it.
     case named(token: String, hostname: URL)
+    /// A reverse forward to a machine the user owns. No third party at all.
+    case ssh(target: SSHTunnelTarget, port: Int)
 
     /// What the interface calls this share.
     public var label: String {
         switch self {
         case .quick: "Quick tunnel"
         case .named: "Named tunnel"
+        case .ssh: "SSH tunnel"
         }
     }
 }

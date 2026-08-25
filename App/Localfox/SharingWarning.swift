@@ -53,4 +53,26 @@ enum SharingWarning {
         fixed port here and point the tunnel's public hostname at it.
         """
     }
+
+    /// Why the SSH entry did nothing.
+    static func sshTunnelUnconfigured(_ service: Service) -> String {
+        """
+        \(service.name) has no SSH tunnel yet. Add the host, user and remote \
+        port under Public sharing in the project's edit sheet.
+        """
+    }
+
+    /// The same boundary again, for a share that involves no third party.
+    ///
+    /// Worth its own wording because the reassurance is different: nobody but
+    /// the user's own VPS sees the traffic, and the exposure is entirely theirs
+    /// to bound.
+    static let sshText = """
+        Anyone who can reach that address on your server reaches this dev \
+        server directly. It has no authentication, and it serves your source \
+        maps, your .env values and every API route on it.
+
+        The forward is plain HTTP unless you terminate TLS on the server \
+        yourself. Sharing stops when the service stops, and when Localfox quits.
+        """
 }

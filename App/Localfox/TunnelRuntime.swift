@@ -77,7 +77,7 @@ actor TunnelRuntime {
         onStatus(serviceID, .starting)
 
         let binary = CloudflaredLayout.binary()
-        guard FileManager.default.isExecutableFile(atPath: binary.path) else {
+        if case .ssh = plan {} else if !FileManager.default.isExecutableFile(atPath: binary.path) {
             onStatus(serviceID, .failed(
                 TunnelError.binaryMissing(path: binary.path).localizedDescription
             ))
@@ -92,6 +92,10 @@ actor TunnelRuntime {
             )
         case let .named(token, _):
             request = CloudflaredCommand.named(binary: binary, token: token)
+        case let .ssh(target, port):
+            // Not cloudflared at all, so the bundled binary check above does not
+            // apply. ssh ships with macOS.
+            request = SSHTunnelCommand.request(target: target, localPort: port)
         }
 
         let process: SpawnedProcess
@@ -114,7 +118,7 @@ actor TunnelRuntime {
             log: LogBuffer()
         )
         running[serviceID]?.drain = drainOutput(of: process, for: serviceID)
-        running[serviceID]?.watch = watch(serviceID: serviceID, generation: generation)
+        running[serviceID]?.watch = watch(serviceID: serviceID, generation: generation, plan: plan)
     }
 
     private func drainOutput(of process: SpawnedProcess, for id: UUID) -> Task<Void, Never> {
@@ -147,7 +151,7 @@ actor TunnelRuntime {
     /// Two phases in one task. The second is not optional: cloudflared prints
     /// the URL before it registers a connection, so a tunnel can be reported
     /// live and then fail, and a dev server can exit at any point after.
-    private func watch(serviceID: UUID, generation: Int) -> Task<Void, Never> {
+    private func watch(serviceID: UUID, generation: Int, plan: TunnelPlan) -> Task<Void, Never> {
         Task { [weak self] in
             let deadline = ContinuousClock.now.advanced(by: Self.urlTimeout)
             while ContinuousClock.now < deadline {
@@ -156,6 +160,17 @@ actor TunnelRuntime {
                 case .gone:
                     return
                 case .pending:
+                    // `ssh -N` says nothing at all when it succeeds, so the log
+                    // can never report readiness for one. Asking the address
+                    // itself is the only proof the forward carries a request,
+                    // and it is also what catches a VPS whose sshd bound the
+                    // forward to its own loopback.
+                    if case let .ssh(target, _) = plan,
+                       await PublicReachability.isReachable(target.publicURL) {
+                        await self.reportURL(target.publicURL, for: serviceID, generation: generation)
+                        await Self.hold(self, serviceID: serviceID, generation: generation)
+                        return
+                    }
                     // `try?` here would swallow the cancellation and spin this
                     // loop at full speed until the deadline.
                     do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
@@ -169,7 +184,7 @@ actor TunnelRuntime {
                 }
             }
             guard let self, !Task.isCancelled else { return }
-            await self.reportTimeout(serviceID, generation: generation)
+            await self.reportTimeout(serviceID, generation: generation, plan: plan)
         }
     }
 
@@ -219,11 +234,24 @@ actor TunnelRuntime {
             // is whether the tunnel registered. Reporting it before that would
             // hand out an address that answers 502 from Cloudflare's edge.
             if NamedTunnelParser.isConnected(in: text) { return .resolved(hostname) }
+        case .ssh:
+            // Failure only. Readiness for an ssh forward is settled by the probe
+            // in `watch`, because a successful `ssh -N` prints nothing at all.
+            if let failure = SSHTunnelCommand.failure(in: text) {
+                return .failed(TunnelError.sshFailed(failure).localizedDescription)
+            }
         }
         // The process can die before it ever reports anything, and nothing else
         // would notice: a tunnel binds no port to poll, so without this the
         // interface sits on "Starting" until the timeout.
         guard ProcessSpawner.isAlive(record.process.processGroup) else {
+            if case .ssh = record.plan {
+                // ssh with BatchMode exits rather than prompting, and the reason
+                // is the last thing it wrote.
+                return .failed(TunnelError.sshFailed(
+                    String(record.log.text.suffix(500))
+                ).localizedDescription)
+            }
             return .failed(noURLMessage(id))
         }
         return .pending
@@ -253,9 +281,19 @@ actor TunnelRuntime {
         TunnelError.noURL(log: String(log(for: id).suffix(2_000))).localizedDescription
     }
 
-    private func reportTimeout(_ id: UUID, generation: Int) async {
+    private func reportTimeout(_ id: UUID, generation: Int, plan: TunnelPlan) async {
         guard current(id, generation) != nil else { return }
-        await report(.failed(noURLMessage(id)), for: id, generation: generation)
+        // An ssh forward that never answered is almost always sshd's
+        // GatewayPorts, which is worth saying rather than reporting a silent log.
+        let message: String
+        if case let .ssh(target, _) = plan {
+            message = TunnelError.sshUnreachable(
+                url: target.publicURL, log: String(log(for: id).suffix(1_000))
+            ).localizedDescription
+        } else {
+            message = noURLMessage(id)
+        }
+        await report(.failed(message), for: id, generation: generation)
     }
 
     private func reportURL(_ url: URL, for id: UUID, generation: Int) {

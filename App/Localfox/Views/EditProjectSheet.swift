@@ -47,6 +47,8 @@ struct EditProjectSheet: View {
         /// The public hostname of a named Cloudflare tunnel, or blank for none.
         var namedHostname = ""
         var namedToken = ""
+        /// The SSH reverse tunnel, blank for none.
+        var ssh = TunnelTargets.SSHFields()
         /// Whether this service can use a named tunnel at all. Cloudflare owns
         /// the origin for one, so the port has to be written down rather than
         /// discovered.
@@ -178,6 +180,9 @@ struct EditProjectSheet: View {
                 ? ""
                 : Self.tokenPlaceholder
         }
+        for index in rows.indices {
+            rows[index].ssh = TunnelTargets.SSHFields(state.tunnelTargets.ssh(for: rows[index].id))
+        }
     }
 
     // MARK: - Renaming
@@ -268,6 +273,9 @@ struct EditProjectSheet: View {
                 for: row.id
             )
         }
+        for row in rows {
+            state.tunnelTargets.setSSH(row.ssh.target, for: row.id)
+        }
     }
 
     private var restartMessage: String {
@@ -330,6 +338,44 @@ private struct ServiceEditor: View {
             .font(.system(size: 10))
             .foregroundStyle(Theme.tertiaryText)
             .fixedSize(horizontal: false, vertical: true)
+        CardDivider()
+        ssh
+    }
+
+    /// A reverse forward to a machine the user already owns. Works under Auto,
+    /// unlike a named tunnel, because the local port is filled in at share time.
+    @ViewBuilder
+    private var ssh: some View {
+        HStack(spacing: 8) {
+            LabelledField(label: "SSH host", text: $row.ssh.host, monospaced: true)
+            LabelledField(label: "User", text: $row.ssh.user, monospaced: true)
+        }
+        HStack(spacing: 8) {
+            LabelledField(label: "SSH port", text: $row.ssh.sshPort, monospaced: true)
+            LabelledField(
+                label: "Remote port",
+                text: $row.ssh.remotePort,
+                monospaced: true,
+                error: sshError
+            )
+        }
+        LabelledField(label: "Identity file", text: $row.ssh.keyPath, monospaced: true)
+        LabelledField(label: "Public address", text: $row.ssh.publicURL, monospaced: true)
+        Text("""
+        The remote sshd needs `GatewayPorts yes`, or the forward only listens on \
+        the server's own loopback. Leave the address blank for \
+        http://host:remote-port, and fill it in if you terminate TLS there.
+        """)
+        .font(.system(size: 10))
+        .foregroundStyle(Theme.tertiaryText)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Says nothing until the row is a half-filled target, because a blank block
+    /// is the normal state for most services.
+    private var sshError: String? {
+        guard row.ssh.isTouched, row.ssh.target == nil else { return nil }
+        return "Needs host, user and remote port"
     }
 
     private var hostnameError: String? {

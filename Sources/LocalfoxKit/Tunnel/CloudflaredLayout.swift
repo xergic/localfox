@@ -28,29 +28,3 @@ public enum CloudflaredLayout {
         return inBundle
     }
 }
-
-public enum TunnelError: Error, Equatable, Sendable, LocalizedError {
-    case binaryMissing(path: String)
-    case spawnFailed(String)
-    case noURL(log: String)
-    case reported(String)
-
-    public var errorDescription: String? {
-        switch self {
-        case let .binaryMissing(path):
-            """
-            The bundled cloudflared binary is missing at \(path). \
-            Run `make cloudflared` to fetch it.
-            """
-        case let .spawnFailed(reason):
-            "cloudflared could not be started. \(reason)"
-        case let .noURL(log):
-            """
-            cloudflared started but never printed a public URL.
-            \(log)
-            """
-        case let .reported(message):
-            "cloudflared failed: \(message)"
-        }
-    }
-}

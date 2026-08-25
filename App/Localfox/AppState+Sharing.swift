@@ -40,6 +40,20 @@ extension AppState {
         await share(service, plan: .named(token: token, hostname: target.hostname))
     }
 
+    /// Opens the SSH reverse tunnel configured for this service.
+    ///
+    /// Unlike a named tunnel this works under Auto, because the forward is built
+    /// from the port Localfox just discovered rather than from anything written
+    /// down elsewhere.
+    func shareSSH(_ service: Service) async {
+        guard let target = tunnelTargets.ssh(for: service.id) else {
+            assign(\.lastError, SharingWarning.sshTunnelUnconfigured(service))
+            return
+        }
+        guard case let .running(_, port) = status(of: service) else { return }
+        await share(service, plan: .ssh(target: target, port: port))
+    }
+
     private func share(_ service: Service, plan: TunnelPlan) async {
         guard let tunnelRuntime, case let .running(pid, _) = status(of: service) else { return }
         await tunnelRuntime.start(

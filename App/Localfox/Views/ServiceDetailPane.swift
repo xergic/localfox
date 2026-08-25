@@ -12,9 +12,18 @@ struct ServiceDetailPane: View {
     /// Which share the user asked for, held across the confirmation.
     @State private var pendingMode: ShareMode = .quick
 
-    enum ShareMode {
+    enum ShareMode: Hashable {
         case quick
         case named
+        case ssh
+
+        var warning: String {
+            switch self {
+            case .quick: SharingWarning.text
+            case .named: SharingWarning.namedText
+            case .ssh: SharingWarning.sshText
+            }
+        }
     }
 
     var body: some View {
@@ -94,7 +103,7 @@ struct ServiceDetailPane: View {
             Button("Share Publicly", role: .destructive) { confirmedShare() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(pendingMode == .named ? SharingWarning.namedText : SharingWarning.text)
+            Text(pendingMode.warning)
         }
     }
 
@@ -143,11 +152,16 @@ struct ServiceDetailPane: View {
         switch mode {
         case .quick: await state.share(service)
         case .named: await state.shareNamed(service)
+        case .ssh: await state.shareSSH(service)
         }
     }
 
-    private var hasNamedTunnel: Bool {
-        state.tunnelTargets.isConfigured(service.id)
+    /// The modes beyond Quick that this service actually has configured.
+    private var extraModes: [ShareMode] {
+        var modes: [ShareMode] = []
+        if state.tunnelTargets.isConfigured(service.id) { modes.append(.named) }
+        if state.tunnelTargets.ssh(for: service.id) != nil { modes.append(.ssh) }
+        return modes
     }
 
     private var portDescription: String {
@@ -203,14 +217,14 @@ struct ServiceDetailPane: View {
                     ) {
                         Task { await state.unshare(service) }
                     }
-                } else if hasNamedTunnel {
-                    // A menu only once there is a choice to make. With no named
-                    // tunnel configured there is exactly one thing Share can do,
+                } else if !extraModes.isEmpty {
+                    // A menu only once there is a choice to make. With nothing
+                    // else configured there is exactly one thing Share can do,
                     // and a one-item menu is a button with an extra click.
                     ShareMenu(
+                        extraModes: extraModes,
                         isTransitioning: tunnel.isTransitioning,
-                        onQuick: { requestShare(.quick) },
-                        onNamed: { requestShare(.named) }
+                        onSelect: requestShare
                     )
                 } else {
                     ActionButton(
@@ -293,14 +307,16 @@ struct ServiceDetailPane: View {
 
 /// Share, with the two tunnel kinds behind it.
 private struct ShareMenu: View {
+    let extraModes: [ServiceDetailPane.ShareMode]
     let isTransitioning: Bool
-    let onQuick: () -> Void
-    let onNamed: () -> Void
+    let onSelect: (ServiceDetailPane.ShareMode) -> Void
 
     var body: some View {
         Menu {
-            Button("Quick Tunnel", action: onQuick)
-            Button("Named Tunnel", action: onNamed)
+            Button("Quick Tunnel") { onSelect(.quick) }
+            ForEach(extraModes, id: \.self) { mode in
+                Button(Self.title(mode)) { onSelect(mode) }
+            }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "antenna.radiowaves.left.and.right")
@@ -324,6 +340,14 @@ private struct ShareMenu: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(isTransitioning)
+    }
+
+    private static func title(_ mode: ServiceDetailPane.ShareMode) -> String {
+        switch mode {
+        case .quick: "Quick Tunnel"
+        case .named: "Named Tunnel"
+        case .ssh: "SSH Tunnel"
+        }
     }
 }
 
