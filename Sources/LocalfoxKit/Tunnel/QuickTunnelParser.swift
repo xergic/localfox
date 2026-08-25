@@ -50,18 +50,21 @@ public enum QuickTunnelParser {
             "failed to read quick-tunnel response",
             "failed to unmarshal quick Tunnel",
             "failed to parse quick Tunnel ID",
-            "Couldn't start tunnel",
-            "Cannot determine default origin certificate path",
-            "context deadline exceeded",
-            "no such host"
+            "Cannot determine default origin certificate path"
         ]
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            let text = String(line)
-            guard signals.contains(where: { text.contains($0) }) else { continue }
-            return message(from: text)
+        guard let match = TunnelLog.firstLine(in: text, matching: signals + Self.sharedSignals) else {
+            return nil
         }
-        return nil
+        return message(from: match.line)
     }
+
+    /// Failures that are not specific to a quick tunnel, so `NamedTunnelParser`
+    /// scans for them too rather than keeping its own copy.
+    static let sharedSignals = [
+        "Couldn't start tunnel",
+        "context deadline exceeded",
+        "no such host"
+    ]
 
     /// Strips the timestamp and level so the interface shows the sentence and
     /// not the log furniture. Prefers cloudflared's own `error=` field, which is

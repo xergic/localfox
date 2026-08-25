@@ -4,8 +4,10 @@ import LocalfoxKit
 /// The public sharing half of `AppState`.
 ///
 /// Split off so neither file grows past the point where the state and the
-/// tunnel lifecycle can be read in one sitting. Everything here still runs on
-/// the main actor and still goes through the same `assign` write guard.
+/// tunnel lifecycle can be read in one sitting. `report` rather than `assign` is
+/// the only thing this seam costs, and it is deliberately the narrowest write
+/// that works: the write guard for the whole observable surface has no business
+/// being callable on an arbitrary key path from another file.
 @MainActor
 extension AppState {
     // MARK: - Public sharing
@@ -18,7 +20,7 @@ extension AppState {
     /// under a URL the user has already sent to somebody.
     func share(_ service: Service) async {
         guard case let .running(_, port) = status(of: service) else { return }
-        await share(service, plan: .quick(port: port, rewritesHost: sharing.rewritesHostHeader))
+        await share(service, plan: .quick(port: port, rewritesHost: preferences.rewritesHostHeader))
     }
 
     /// Opens the named tunnel configured for this service.
@@ -28,16 +30,16 @@ extension AppState {
     /// written down there; under Auto the dev server can bind a different one
     /// and the share would point at whatever last held it.
     func shareNamed(_ service: Service) async {
-        guard let target = tunnelTargets.named(for: service.id),
+        guard let hostname = tunnelTargets.hostname(for: service.id),
               let token = tunnelTargets.token(for: service.id) else {
-            assign(\.lastError, SharingWarning.namedTunnelUnconfigured(service))
+            report(SharingWarning.namedTunnelUnconfigured(service))
             return
         }
         guard service.portMode.fixedValue != nil else {
-            assign(\.lastError, SharingWarning.namedTunnelNeedsFixedPort(service))
+            report(SharingWarning.namedTunnelNeedsFixedPort(service))
             return
         }
-        await share(service, plan: .named(token: token, hostname: target.hostname))
+        await share(service, plan: .named(token: token, hostname: hostname))
     }
 
     /// Opens the SSH reverse tunnel configured for this service.
@@ -47,7 +49,7 @@ extension AppState {
     /// down elsewhere.
     func shareSSH(_ service: Service) async {
         guard let target = tunnelTargets.ssh(for: service.id) else {
-            assign(\.lastError, SharingWarning.sshTunnelUnconfigured(service))
+            report(SharingWarning.sshTunnelUnconfigured(service))
             return
         }
         guard case let .running(_, port) = status(of: service) else { return }

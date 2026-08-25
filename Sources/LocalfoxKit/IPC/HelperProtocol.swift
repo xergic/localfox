@@ -134,11 +134,17 @@ public enum HelperIdentity {
     /// The last lines of Caddy's log, for the diagnostics pane.
     func caddyLog(lines: Int, reply: @escaping (String) -> Void)
 
-    /// The last lines of the access log, for the requests panel.
+    /// The last lines of the access log for one domain, for the requests panel.
     ///
     /// Read through the helper for the same reason as `caddyLog`: the storage
     /// root is `0700 root:admin`, so the app cannot open the file itself.
-    func accessLog(lines: Int, reply: @escaping (String) -> Void)
+    ///
+    /// The host is filtered here rather than in the app because one log holds
+    /// every route, and a machine running six services would otherwise ship six
+    /// times the traffic across the boundary every poll to discard five of them.
+    /// It is a `LocalDomain` on the wire, validated on arrival, so it stays a
+    /// name and can never become a path.
+    func accessLog(host: String, lines: Int, reply: @escaping (String) -> Void)
 }
 
 /// What the app knows about the helper right now.

@@ -81,7 +81,19 @@ struct ActionButton: View {
                 Text(title).font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(isPrimary ? Theme.onAccent : tint)
-            .padding(.horizontal, 10)
+            .actionChrome(isPrimary: isPrimary, isHovering: isHovering)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
+extension View {
+    /// The pill an `ActionButton` wears, so anything that has to look like one
+    /// without being one still changes with it.
+    func actionChrome(isPrimary: Bool = false, isHovering: Bool = false) -> some View {
+        padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -91,10 +103,6 @@ struct ActionButton: View {
                             .strokeBorder(isPrimary ? .clear : Theme.border, lineWidth: 1)
                     )
             )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
     }
 }
 
@@ -174,6 +182,8 @@ struct LabelledField: View {
     let label: String
     @Binding var text: String
     var monospaced = false
+    /// Draws the value as dots. A tunnel token has no business being on screen.
+    var isSecure = false
     var error: String?
 
     var body: some View {
@@ -189,9 +199,9 @@ struct LabelledField: View {
                         .foregroundStyle(Theme.danger)
                 }
             }
-            TextField("", text: $text)
+            field
                 .textFieldStyle(.plain)
-                .font(monospaced ? .lfSubtitle : .system(size: 12))
+                .font(monospaced || isSecure ? .lfSubtitle : .system(size: 12))
                 .foregroundStyle(Theme.primaryText)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
@@ -208,32 +218,13 @@ struct LabelledField: View {
                 )
         }
     }
-}
 
-/// `LabelledField` for a secret, so a token is never drawn as itself.
-struct SecureLabelledField: View {
-    let label: String
-    @Binding var text: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.secondaryText)
+    @ViewBuilder
+    private var field: some View {
+        if isSecure {
             SecureField("", text: $text)
-                .textFieldStyle(.plain)
-                .font(.lfSubtitle)
-                .foregroundStyle(Theme.primaryText)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Theme.background)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(Theme.border, lineWidth: 1)
-                        )
-                )
+        } else {
+            TextField("", text: $text)
         }
     }
 }

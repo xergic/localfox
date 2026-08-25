@@ -119,10 +119,13 @@ Localfox can record what the proxy handled. Turn on **Record requests** in Prefe
 each service's detail pane lists its recent traffic: method, path, status, duration and
 size. Caddy writes it, one JSON line per request, next to its own log.
 
-The file holds the request line and the response, and nothing else. Headers, cookies and
-`Authorization` values are never recorded, because Caddy's `should_log_credentials` is left
-off. Turning the setting off removes the logger from the proxy config entirely rather than
-leaving it running and ignored.
+The file holds the request line and the response, and nothing else. Request and response
+headers are deleted before the line is written, so no cookie, `Authorization` value or
+custom `X-API-Key` reaches disk. Caddy's own redaction covers only four header names, which
+is not enough to make that promise, so Localfox drops both header maps outright.
+
+The URL is recorded as sent, query string included. Turning the setting off removes the
+logger from the proxy config entirely rather than leaving it running and ignored.
 
 ## Sharing
 

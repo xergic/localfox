@@ -83,16 +83,15 @@ public enum SSHTunnelCommand {
             executable: executable,
             arguments: arguments,
             workingDirectory: workingDirectory,
-            // HOME is needed and not merely convenient: ssh reads known_hosts,
-            // the agent socket and ~/.ssh/config from it. Unlike cloudflared's
-            // config.yml, which can silently redirect a tunnel to a service the
-            // user never shared, an ssh config that rewrites a host is the
-            // user's own arrangement, so it is honoured rather than isolated.
-            environment: [
-                "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
-                "PATH": "/usr/bin:/bin",
+            // HOME comes with the minimal environment and is needed rather than
+            // merely convenient here: ssh reads known_hosts, the agent socket and
+            // ~/.ssh/config from it. Unlike cloudflared's config.yml, which can
+            // silently redirect a tunnel to a service the user never shared, an
+            // ssh config that rewrites a host is the user's own arrangement, so
+            // it is honoured rather than isolated.
+            environment: TunnelEnvironment.minimal(extra: [
                 "SSH_AUTH_SOCK": ProcessInfo.processInfo.environment["SSH_AUTH_SOCK"] ?? ""
-            ].filter { !$0.value.isEmpty }
+            ])
         )
     }
 
@@ -107,12 +106,8 @@ public enum SSHTunnelCommand {
             "Connection timed out",
             "No route to host"
         ]
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            let text = String(line)
-            guard let signal = signals.first(where: { text.contains($0) }) else { continue }
-            return hint(for: signal).map { "\(text) \($0)" } ?? text
-        }
-        return nil
+        guard let match = TunnelLog.firstLine(in: text, matching: signals) else { return nil }
+        return hint(for: match.signal).map { "\(match.line) \($0)" } ?? match.line
     }
 
     /// The sentence that turns an ssh error into something to do next.

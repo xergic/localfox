@@ -230,7 +230,18 @@ struct CaddyConfigBuilderTests {
           "logs" : {
             "access" : {
               "encoder" : {
-                "format" : "json"
+                "fields" : {
+                  "request>headers" : {
+                    "filter" : "delete"
+                  },
+                  "resp_headers" : {
+                    "filter" : "delete"
+                  }
+                },
+                "format" : "filter",
+                "wrap" : {
+                  "format" : "json"
+                }
               },
               "include" : [
                 "http.log.access.access"
@@ -265,6 +276,22 @@ struct CaddyConfigBuilderTests {
           "default_logger_name" : "access"
         }
         """#)
+    }
+
+    /// Caddy's own redaction covers only Cookie, Set-Cookie, Authorization and
+    /// Proxy-Authorization, so an `X-API-Key` would otherwise sit in a
+    /// root-owned file. The preference promises headers are never recorded, and
+    /// this is what makes that true.
+    @Test("neither request nor response headers reach the access log")
+    func deletesEveryHeader() throws {
+        let logs = try #require(try decoded(recordsRequests: true)["logging"] as? [String: Any])
+        let table = try #require(logs["logs"] as? [String: [String: Any]])
+        let encoder = try #require(table["access"]?["encoder"] as? [String: Any])
+        #expect(encoder["format"] as? String == "filter")
+        #expect((encoder["wrap"] as? [String: String])?["format"] == "json")
+        let fields = try #require(encoder["fields"] as? [String: [String: String]])
+        #expect(fields["request>headers"]?["filter"] == "delete")
+        #expect(fields["resp_headers"]?["filter"] == "delete")
     }
 
     /// Caddy sends an entry to every log whose filters accept it, so without the

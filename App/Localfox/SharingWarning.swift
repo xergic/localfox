@@ -10,29 +10,25 @@ import LocalfoxKit
 /// dev server never reaches the LAN by accident. A share is the single action
 /// that crosses that line, so it is the single action that asks first.
 enum SharingWarning {
-    static let text = """
-        Anyone with the link reaches this dev server directly. It has no \
-        authentication, and it serves your source maps, your .env values and \
-        every API route on it.
-
-        Cloudflare assigns a random address that changes each time. Sharing \
-        stops when the service stops, and when Localfox quits.
-        """
-
-    /// The same boundary, minus the sentence that is only true of a quick tunnel.
+    /// What every share exposes, said once.
     ///
-    /// A named tunnel answers on an address the user chose and keeps, which is
-    /// the point of it, so promising a random one that changes would be wrong in
-    /// the one place the wording has to be right.
-    static let namedText = """
+    /// The sentence that names what a reader of the link actually gets is the
+    /// one part of this that has to be right, and three copies of it is three
+    /// chances for two of them to drift.
+    private static let exposure = """
         Anyone with the link reaches this dev server directly. It has no \
         authentication, and it serves your source maps, your .env values and \
         every API route on it.
-
-        The address is the one you configured in Cloudflare, so it stays the \
-        same and anybody who has it can come back. Sharing stops when the \
-        service stops, and when Localfox quits.
         """
+
+    /// The exposure, plus what is specific to the way it is being shared.
+    static func exposure(_ mode: ServiceDetailPane.ShareMode) -> String {
+        """
+        \(exposure)
+
+        \(mode.caveat)
+        """
+    }
 
     /// Why the Named entry did nothing.
     static func namedTunnelUnconfigured(_ service: Service) -> String {
@@ -61,18 +57,29 @@ enum SharingWarning {
         port under Public sharing in the project's edit sheet.
         """
     }
+}
 
-    /// The same boundary again, for a share that involves no third party.
-    ///
-    /// Worth its own wording because the reassurance is different: nobody but
-    /// the user's own VPS sees the traffic, and the exposure is entirely theirs
-    /// to bound.
-    static let sshText = """
-        Anyone who can reach that address on your server reaches this dev \
-        server directly. It has no authentication, and it serves your source \
-        maps, your .env values and every API route on it.
-
-        The forward is plain HTTP unless you terminate TLS on the server \
-        yourself. Sharing stops when the service stops, and when Localfox quits.
-        """
+private extension ServiceDetailPane.ShareMode {
+    /// The half of the warning that is not true of every mode.
+    var caveat: String {
+        switch self {
+        case .quick:
+            """
+            Cloudflare assigns a random address that changes each time. Sharing \
+            stops when the service stops, and when Localfox quits.
+            """
+        case .named:
+            """
+            The address is the one you configured in Cloudflare, so it stays the \
+            same and anybody who has it can come back. Sharing stops when the \
+            service stops, and when Localfox quits.
+            """
+        case .ssh:
+            """
+            The forward is plain HTTP unless you terminate TLS on your server \
+            yourself, and it is reachable by anyone who can reach that address. \
+            Sharing stops when the service stops, and when Localfox quits.
+            """
+        }
+    }
 }

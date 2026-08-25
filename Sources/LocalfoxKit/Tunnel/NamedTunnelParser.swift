@@ -35,17 +35,9 @@ public enum NamedTunnelParser {
             "Unauthorized",
             "Couldn't decode Tunnel token",
             "failed to parse token",
-            "Tunnel credentials file",
-            // Shared with the quick path, and just as fatal here.
-            "Couldn't start tunnel",
-            "context deadline exceeded",
-            "no such host"
-        ]
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            let text = String(line)
-            guard signals.contains(where: { text.contains($0) }) else { continue }
-            return QuickTunnelParser.message(from: text)
-        }
-        return nil
+            "Tunnel credentials file"
+        ] + QuickTunnelParser.sharedSignals
+        guard let match = TunnelLog.firstLine(in: text, matching: signals) else { return nil }
+        return QuickTunnelParser.message(from: match.line)
     }
 }

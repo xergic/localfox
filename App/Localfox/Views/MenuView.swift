@@ -382,12 +382,12 @@ struct ServiceRow: View {
             titleVisibility: .visible
         ) {
             Button("Share Publicly", role: .destructive) {
-                state.sharing.warningAccepted = true
+                state.preferences.warningAccepted = true
                 Task { await state.share(service) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(SharingWarning.text)
+            Text(SharingWarning.exposure(.quick))
         }
         .opacity(status.isTransitioning ? 0.5 : 1)
     }
@@ -467,7 +467,7 @@ struct ServiceRow: View {
 
     private func requestShare() {
         guard status.isRunning else { return }
-        if state.sharing.warningAccepted {
+        if state.preferences.warningAccepted {
             Task { await state.share(service) }
         } else {
             confirmsShare = true

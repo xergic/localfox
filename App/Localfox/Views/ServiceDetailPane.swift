@@ -17,12 +17,16 @@ struct ServiceDetailPane: View {
         case named
         case ssh
 
-        var warning: String {
+        var title: String {
             switch self {
-            case .quick: SharingWarning.text
-            case .named: SharingWarning.namedText
-            case .ssh: SharingWarning.sshText
+            case .quick: "Quick Tunnel"
+            case .named: "Named Tunnel"
+            case .ssh: "SSH Tunnel"
             }
+        }
+
+        var warning: String {
+            SharingWarning.exposure(self)
         }
     }
 
@@ -132,7 +136,7 @@ struct ServiceDetailPane: View {
     }
 
     private func confirmedShare() {
-        state.sharing.warningAccepted = true
+        state.preferences.warningAccepted = true
         Task { await start(pendingMode) }
     }
 
@@ -141,7 +145,7 @@ struct ServiceDetailPane: View {
     private func requestShare(_ mode: ShareMode) {
         guard status.isRunning else { return }
         pendingMode = mode
-        if state.sharing.warningAccepted {
+        if state.preferences.warningAccepted {
             Task { await start(mode) }
         } else {
             confirmsShare = true
@@ -244,7 +248,7 @@ struct ServiceDetailPane: View {
     private var requestsCard: some View {
         let entries = state.requests(for: service)
         DetailCard(title: "REQUESTS", symbol: "arrow.left.arrow.right") {
-            if !state.proxy.recordsRequests {
+            if !state.preferences.recordsRequests {
                 Text("Turn on Record requests in Preferences to see traffic here.")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.tertiaryText)
@@ -305,7 +309,7 @@ struct ServiceDetailPane: View {
     }
 }
 
-/// Share, with the two tunnel kinds behind it.
+/// Share, with every configured tunnel kind behind it.
 private struct ShareMenu: View {
     let extraModes: [ServiceDetailPane.ShareMode]
     let isTransitioning: Bool
@@ -313,9 +317,9 @@ private struct ShareMenu: View {
 
     var body: some View {
         Menu {
-            Button("Quick Tunnel") { onSelect(.quick) }
+            Button(ServiceDetailPane.ShareMode.quick.title) { onSelect(.quick) }
             ForEach(extraModes, id: \.self) { mode in
-                Button(Self.title(mode)) { onSelect(mode) }
+                Button(mode.title) { onSelect(mode) }
             }
         } label: {
             HStack(spacing: 5) {
@@ -325,29 +329,12 @@ private struct ShareMenu: View {
                     .font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(Theme.primaryText)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Theme.pill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(Theme.border, lineWidth: 1)
-                    )
-            )
+            .actionChrome()
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(isTransitioning)
-    }
-
-    private static func title(_ mode: ServiceDetailPane.ShareMode) -> String {
-        switch mode {
-        case .quick: "Quick Tunnel"
-        case .named: "Named Tunnel"
-        case .ssh: "SSH Tunnel"
-        }
     }
 }
 

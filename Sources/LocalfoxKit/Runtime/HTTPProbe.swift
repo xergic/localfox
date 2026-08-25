@@ -176,7 +176,10 @@ public struct HTTPProbe: Sendable {
 /// Refuses every redirect, which reports the first response rather than the end of
 /// a chain. That is what an inspector wants, it cannot be walked off loopback, and
 /// it cannot be trapped in a dev server's redirect loop.
-private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+///
+/// Shared with `PublicReachability`, which needs the same guarantee for the one
+/// address Localfox reaches that is not loopback.
+final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
@@ -188,7 +191,9 @@ private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unche
     }
 }
 
-private extension Duration {
+extension Duration {
+    /// Whole seconds plus the fraction. `components.seconds` on its own floors a
+    /// sub-second duration to zero, which reads as "no timeout".
     var timeInterval: TimeInterval {
         TimeInterval(components.seconds) + TimeInterval(components.attoseconds) / 1e18
     }

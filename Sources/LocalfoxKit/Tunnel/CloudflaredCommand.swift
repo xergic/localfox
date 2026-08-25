@@ -56,7 +56,7 @@ public enum CloudflaredCommand {
             executable: binary.path,
             arguments: arguments,
             workingDirectory: workingDirectory,
-            environment: environment()
+            environment: TunnelEnvironment.minimal()
         )
     }
 
@@ -89,23 +89,7 @@ public enum CloudflaredCommand {
             // The token goes in the environment and never in argv. Arguments are
             // world-readable through `ps`, and this one is a bearer credential
             // for the user's Cloudflare tunnel.
-            environment: environment(extra: ["TUNNEL_TOKEN": token])
+            environment: TunnelEnvironment.minimal(extra: ["TUNNEL_TOKEN": token])
         )
-    }
-
-    /// Deliberately minimal, and deliberately not the user's login environment.
-    ///
-    /// cloudflared reads a TUNNEL_* variable for nearly every flag it takes, so
-    /// inheriting a shell that exports `TUNNEL_TOKEN` or `TUNNEL_URL` would
-    /// silently run a different tunnel than the one the user asked to share.
-    /// Anything Localfox does want to set goes through `extra`, which is what
-    /// keeps that guarantee true rather than merely intended.
-    private static func environment(extra: [String: String] = [:]) -> [String: String] {
-        var environment = [
-            "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
-            "PATH": "/usr/bin:/bin"
-        ]
-        environment.merge(extra) { _, new in new }
-        return environment
     }
 }

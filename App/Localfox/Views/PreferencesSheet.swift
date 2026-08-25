@@ -66,14 +66,14 @@ struct PreferencesSheet: View {
             PreferencesCard {
                 PreferenceRow(
                     title: "Record requests",
-                    subtitle: "Log method, path, status and duration. Never headers or cookies"
+                    subtitle: "Method, URL, status and duration. Headers and cookies are never recorded"
                 ) {
                     Toggle("", isOn: Binding(
-                        get: { state.proxy.recordsRequests },
+                        get: { state.preferences.recordsRequests },
                         // The proxy only learns about this through a route sync,
                         // so the write and the sync are one action.
                         set: { enabled in
-                            state.proxy.recordsRequests = enabled
+                            state.preferences.recordsRequests = enabled
                             Task { await state.syncProxy() }
                         }
                     ))
@@ -88,12 +88,12 @@ struct PreferencesSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             sectionLabel("SHARING", symbol: "antenna.radiowaves.left.and.right")
             PreferencesCard {
-                @Bindable var sharing = state.sharing
+                @Bindable var preferences = state.preferences
                 PreferenceRow(
                     title: "Rewrite the Host header",
                     subtitle: "Needed by Vite and Next, wrong for Django ALLOWED_HOSTS and OAuth"
                 ) {
-                    Toggle("", isOn: $sharing.rewritesHostHeader)
+                    Toggle("", isOn: $preferences.rewritesHostHeader)
                         .labelsHidden()
                         .toggleStyle(.checkbox)
                 }
@@ -103,8 +103,8 @@ struct PreferencesSheet: View {
                     subtitle: "Ask what a public tunnel exposes each time one is opened"
                 ) {
                     Toggle("", isOn: Binding(
-                        get: { !sharing.warningAccepted },
-                        set: { sharing.warningAccepted = !$0 }
+                        get: { !preferences.warningAccepted },
+                        set: { preferences.warningAccepted = !$0 }
                     ))
                     .labelsHidden()
                     .toggleStyle(.checkbox)

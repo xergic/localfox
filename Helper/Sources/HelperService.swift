@@ -148,11 +148,15 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
         }
     }
 
-    func accessLog(lines: Int, reply: @escaping (String) -> Void) {
+    func accessLog(host: String, lines: Int, reply: @escaping (String) -> Void) {
+        guard let marker = HelperRequestValidator.accessLogMarker(host: host) else {
+            reply("")
+            return
+        }
         let clampedLines = HelperRequestValidator.clampLogLines(lines)
         let reply = XPCReply(reply)
         Task {
-            reply.call(await runtime.accessLog(lines: clampedLines))
+            reply.call(await runtime.accessLog(matching: marker, lines: clampedLines))
         }
     }
 
@@ -220,6 +224,8 @@ private actor HelperRuntime {
     private let adminClient: CaddyAdminClient
     private let trustStore: TrustStore
     private var caddy: ManagedCaddy?
+    /// The route load in flight, so the next one queues behind it.
+    private var routeSync: Task<Void, any Error>?
     /// The ids from the last `setRoutes` call.
     ///
     /// The app owns the whole route table and every sync carries all of it.
@@ -243,7 +249,28 @@ private actor HelperRuntime {
         return CaddyProcessControl.isVerified(caddy.record)
     }
 
+    /// Applies a route table, one at a time.
+    ///
+    /// `setRoutes` suspends on the admin API, and this actor lets another call
+    /// in while it does. The app syncs from several unstructured tasks, so two
+    /// can overlap and complete out of order, leaving `declaredRouteIDs`
+    /// describing a different table from the one Caddy is actually serving and
+    /// undermining the `setUpstream` check that rests on it. Chaining onto the
+    /// previous call makes the load and the record of it one indivisible step.
     func setRoutes(_ routes: [ProxyRoute], recordsRequests: Bool) async throws {
+        let previous = routeSync
+        let task = Task {
+            // The previous sync's failure is its caller's to report, not this
+            // one's. Only its ordering matters here.
+            _ = try? await previous?.value
+            try await applyRoutes(routes, recordsRequests: recordsRequests)
+        }
+        routeSync = task
+        defer { if routeSync == task { routeSync = nil } }
+        try await task.value
+    }
+
+    private func applyRoutes(_ routes: [ProxyRoute], recordsRequests: Bool) async throws {
         let options = CaddyConfigBuilder.Options(
             storageRoot: layout.storageRoot.path,
             logPath: layout.logFile.path,
@@ -333,28 +360,56 @@ private actor HelperRuntime {
         tail(of: layout.logFile, lines: lines)
     }
 
-    func accessLog(lines: Int) -> String {
-        tail(of: layout.accessLog, lines: lines)
+    func accessLog(matching marker: String, lines: Int) -> String {
+        tail(of: layout.accessLog, lines: lines, matching: marker)
     }
 
     /// The last `lines` of a log the app cannot open itself.
-    private func tail(of file: URL, lines: Int) -> String {
+    ///
+    /// Reads backwards in chunks rather than taking a fixed window off the end.
+    /// The requests panel asks for this every couple of seconds, and the access
+    /// log rolls at 10 MB, so a fixed 4 MB window meant reading, decoding and
+    /// splitting four megabytes per tick in the root daemon to keep a few
+    /// hundred lines. One chunk usually covers the whole answer.
+    ///
+    /// - Parameter marker: Keeps only lines containing it. Applied here so a
+    ///   line belonging to another service never crosses the boundary at all.
+    private func tail(of file: URL, lines: Int, matching marker: String? = nil) -> String {
         guard lines > 0,
               let handle = try? FileHandle(forReadingFrom: file)
         else { return "" }
         defer { try? handle.close() }
 
         do {
-            let end = try handle.seekToEnd()
-            let maximumBytes: UInt64 = 4 * 1_024 * 1_024
-            let start = end > maximumBytes ? end - maximumBytes : 0
-            try handle.seek(toOffset: start)
-            guard let data = try handle.readToEnd() else { return "" }
-            var logLines = String(decoding: data, as: UTF8.self)
-                .split(separator: "\n", omittingEmptySubsequences: false)
-            if start > 0, !logLines.isEmpty { logLines.removeFirst() }
-            if logLines.last?.isEmpty == true { logLines.removeLast() }
-            return logLines.suffix(lines).joined(separator: "\n")
+            var end = try handle.seekToEnd()
+            var collected: [String] = []
+            var carry = ""
+            // A ceiling as well as a line count, so a log with one enormous line
+            // cannot make this read the whole file.
+            var budget = 8 * 1_024 * 1_024
+
+            while end > 0, collected.count < lines, budget > 0 {
+                let size = UInt64(min(Int(end), 64 * 1_024))
+                end -= size
+                budget -= Int(size)
+                try handle.seek(toOffset: end)
+                guard let data = try handle.read(upToCount: Int(size)) else { break }
+
+                var chunk = String(decoding: data, as: UTF8.self) + carry
+                var pieces = chunk.split(separator: "\n", omittingEmptySubsequences: false)
+                // The first piece is only a whole line once the read reached the
+                // start of the file; before that it is the tail of a line whose
+                // head is in the next chunk back.
+                carry = end > 0 ? String(pieces.removeFirst()) : ""
+                chunk = ""
+
+                for piece in pieces.reversed() where !piece.isEmpty {
+                    if let marker, !piece.contains(marker) { continue }
+                    collected.append(String(piece))
+                    if collected.count == lines { break }
+                }
+            }
+            return collected.reversed().joined(separator: "\n")
         } catch {
             return "Could not read \(file.lastPathComponent): \(error.localizedDescription)"
         }

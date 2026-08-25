@@ -15,9 +15,12 @@ actor TunnelRuntime {
     /// What Localfox knows about one open tunnel.
     private struct Running {
         let process: SpawnedProcess
-        /// Which of the two modes this is, because the log says different things
-        /// about each one and only the quick one carries its address in there.
-        let plan: TunnelPlan
+        /// How to read this tunnel's log, and what a failure means for it.
+        ///
+        /// The credential is deliberately not here: `TunnelPlan.named` carries
+        /// the token, which is needed once at spawn and never again, so the
+        /// record keeps the plan's questions and not its secrets.
+        let reader: TunnelReader
         /// The process group of the dev server this tunnel dials.
         ///
         /// Held so the tunnel can notice the origin dying on its own. Nothing
@@ -56,6 +59,14 @@ actor TunnelRuntime {
     /// while a cloudflared is still being killed.
     private var teardowns: [Int: Task<Void, Never>] = [:]
     private var generations = 0
+    /// The newest generation ever started for a service, live or not.
+    ///
+    /// `running` cannot answer this. A teardown clears the record before it
+    /// signals, so while generation 1 is still escalating and generation 2 has
+    /// already failed, both are absent from `running` and whichever teardown
+    /// finishes last would win. That let a stale `.off` replace a newer tunnel's
+    /// failure on screen.
+    private var latestGeneration: [UUID: Int] = [:]
     private let onStatus: @Sendable (UUID, TunnelStatus) -> Void
 
     /// No `onLog` counterpart to `ServiceRuntime`'s. The buffer exists only so
@@ -77,26 +88,14 @@ actor TunnelRuntime {
         onStatus(serviceID, .starting)
 
         let binary = CloudflaredLayout.binary()
-        if case .ssh = plan {} else if !FileManager.default.isExecutableFile(atPath: binary.path) {
+        guard !plan.needsCloudflared || FileManager.default.isExecutableFile(atPath: binary.path) else {
             onStatus(serviceID, .failed(
                 TunnelError.binaryMissing(path: binary.path).localizedDescription
             ))
             return
         }
 
-        let request: SpawnRequest
-        switch plan {
-        case let .quick(port, rewritesHost):
-            request = CloudflaredCommand.request(
-                binary: binary, port: port, rewriteHost: rewritesHost
-            )
-        case let .named(token, _):
-            request = CloudflaredCommand.named(binary: binary, token: token)
-        case let .ssh(target, port):
-            // Not cloudflared at all, so the bundled binary check above does not
-            // apply. ssh ships with macOS.
-            request = SSHTunnelCommand.request(target: target, localPort: port)
-        }
+        let request = plan.request(cloudflared: binary)
 
         let process: SpawnedProcess
         do {
@@ -110,18 +109,22 @@ actor TunnelRuntime {
 
         generations += 1
         let generation = generations
+        latestGeneration[serviceID] = generation
+        let reader = TunnelReader(plan)
         running[serviceID] = Running(
             process: process,
-            plan: plan,
+            reader: reader,
             originGroup: originGroup,
             generation: generation,
             log: LogBuffer()
         )
-        running[serviceID]?.drain = drainOutput(of: process, for: serviceID)
-        running[serviceID]?.watch = watch(serviceID: serviceID, generation: generation, plan: plan)
+        running[serviceID]?.drain = drainOutput(of: process, for: serviceID, generation: generation)
+        running[serviceID]?.watch = watch(serviceID: serviceID, generation: generation, reader: reader)
     }
 
-    private func drainOutput(of process: SpawnedProcess, for id: UUID) -> Task<Void, Never> {
+    private func drainOutput(
+        of process: SpawnedProcess, for id: UUID, generation: Int
+    ) -> Task<Void, Never> {
         Task.detached { [weak self] in
             await withTaskGroup(of: Void.self) { group in
                 for handle in [process.standardOutput, process.standardError] {
@@ -129,7 +132,9 @@ actor TunnelRuntime {
                         while true {
                             let data = handle.availableData
                             if data.isEmpty { break }
-                            await self?.appendLog(String(decoding: data, as: UTF8.self), for: id)
+                            await self?.appendLog(
+                                String(decoding: data, as: UTF8.self), for: id, generation: generation
+                            )
                         }
                     }
                 }
@@ -137,10 +142,13 @@ actor TunnelRuntime {
         }
     }
 
-    /// Guarded by generation so a drain still finishing on the old process
+    /// Guarded by generation, so a drain still finishing on the old process
     /// cannot append its shutdown output, or its banner, into the log of the
-    /// tunnel that replaced it.
-    private func appendLog(_ text: String, for id: UUID) {
+    /// tunnel that replaced it. `stop` clears the record before it signals, so
+    /// the two genuinely overlap: without this the new watcher can read the old
+    /// process's text and call it its own connection, or its own failure.
+    private func appendLog(_ text: String, for id: UUID, generation: Int) {
+        guard current(id, generation) != nil else { return }
         running[id]?.log.append(text)
     }
 
@@ -151,25 +159,30 @@ actor TunnelRuntime {
     /// Two phases in one task. The second is not optional: cloudflared prints
     /// the URL before it registers a connection, so a tunnel can be reported
     /// live and then fail, and a dev server can exit at any point after.
-    private func watch(serviceID: UUID, generation: Int, plan: TunnelPlan) -> Task<Void, Never> {
+    private func watch(serviceID: UUID, generation: Int, reader: TunnelReader) -> Task<Void, Never> {
         Task { [weak self] in
             let deadline = ContinuousClock.now.advanced(by: Self.urlTimeout)
+            var probeDelay: Duration = .milliseconds(500)
             while ContinuousClock.now < deadline {
                 guard let self, !Task.isCancelled else { return }
                 switch await self.poll(serviceID, generation: generation) {
                 case .gone:
                     return
                 case .pending:
-                    // `ssh -N` says nothing at all when it succeeds, so the log
-                    // can never report readiness for one. Asking the address
-                    // itself is the only proof the forward carries a request,
-                    // and it is also what catches a VPS whose sshd bound the
-                    // forward to its own loopback.
-                    if case let .ssh(target, _) = plan,
-                       await PublicReachability.isReachable(target.publicURL) {
-                        await self.reportURL(target.publicURL, for: serviceID, generation: generation)
-                        await Self.hold(self, serviceID: serviceID, generation: generation)
-                        return
+                    // A mode whose log cannot report readiness proves itself by
+                    // answering instead. Backed off rather than probed on every
+                    // tick: against a host that refuses immediately, a flat
+                    // 200ms loop sends about two hundred requests to the user's
+                    // public address during one failed share.
+                    if let url = reader.probeURL {
+                        if await PublicReachability.isReachable(url) {
+                            await self.reportURL(url, for: serviceID, generation: generation)
+                            await Self.hold(self, serviceID: serviceID, generation: generation)
+                            return
+                        }
+                        do { try await Task.sleep(for: probeDelay) } catch { return }
+                        probeDelay = min(probeDelay * 2, .seconds(4))
+                        continue
                     }
                     // `try?` here would swallow the cancellation and spin this
                     // loop at full speed until the deadline.
@@ -184,7 +197,7 @@ actor TunnelRuntime {
                 }
             }
             guard let self, !Task.isCancelled else { return }
-            await self.reportTimeout(serviceID, generation: generation, plan: plan)
+            await self.reportTimeout(serviceID, generation: generation, reader: reader)
         }
     }
 
@@ -217,42 +230,19 @@ actor TunnelRuntime {
         guard let record = current(id, generation) else { return .gone }
 
         let text = record.log.text
-        switch record.plan {
-        case .quick:
-            // Failure before URL. The failure message names the API endpoint
-            // cloudflared could not reach, which is itself a trycloudflare.com
-            // host, so checking the other way round reports a dead share as live.
-            if let failure = QuickTunnelParser.failure(in: text) {
-                return .failed(TunnelError.reported(failure).localizedDescription)
-            }
-            if let url = QuickTunnelParser.publicURL(in: text) { return .resolved(url) }
-        case let .named(_, hostname):
-            if let failure = NamedTunnelParser.failure(in: text) {
-                return .failed(TunnelError.reported(failure).localizedDescription)
-            }
-            // The hostname is the one the user configured, so the only question
-            // is whether the tunnel registered. Reporting it before that would
-            // hand out an address that answers 502 from Cloudflare's edge.
-            if NamedTunnelParser.isConnected(in: text) { return .resolved(hostname) }
-        case .ssh:
-            // Failure only. Readiness for an ssh forward is settled by the probe
-            // in `watch`, because a successful `ssh -N` prints nothing at all.
-            if let failure = SSHTunnelCommand.failure(in: text) {
-                return .failed(TunnelError.sshFailed(failure).localizedDescription)
-            }
+        switch record.reader.reading(of: text) {
+        case let .failed(error):
+            return .failed(error.localizedDescription)
+        case let .live(url):
+            return .resolved(url)
+        case .pending:
+            break
         }
         // The process can die before it ever reports anything, and nothing else
         // would notice: a tunnel binds no port to poll, so without this the
         // interface sits on "Starting" until the timeout.
         guard ProcessSpawner.isAlive(record.process.processGroup) else {
-            if case .ssh = record.plan {
-                // ssh with BatchMode exits rather than prompting, and the reason
-                // is the last thing it wrote.
-                return .failed(TunnelError.sshFailed(
-                    String(record.log.text.suffix(500))
-                ).localizedDescription)
-            }
-            return .failed(noURLMessage(id))
+            return .failed(record.reader.earlyExit(log: text).localizedDescription)
         }
         return .pending
     }
@@ -274,26 +264,13 @@ actor TunnelRuntime {
         return record
     }
 
-    /// The tail matters more than the head here: cloudflared's first log line is
-    /// a paragraph of terms-of-use prose, so the front of the buffer never says
-    /// anything about why the tunnel did not open.
-    private func noURLMessage(_ id: UUID) -> String {
-        TunnelError.noURL(log: String(log(for: id).suffix(2_000))).localizedDescription
-    }
-
-    private func reportTimeout(_ id: UUID, generation: Int, plan: TunnelPlan) async {
+    private func reportTimeout(_ id: UUID, generation: Int, reader: TunnelReader) async {
         guard current(id, generation) != nil else { return }
-        // An ssh forward that never answered is almost always sshd's
-        // GatewayPorts, which is worth saying rather than reporting a silent log.
-        let message: String
-        if case let .ssh(target, _) = plan {
-            message = TunnelError.sshUnreachable(
-                url: target.publicURL, log: String(log(for: id).suffix(1_000))
-            ).localizedDescription
-        } else {
-            message = noURLMessage(id)
-        }
-        await report(.failed(message), for: id, generation: generation)
+        await report(
+            .failed(reader.timedOut(log: log(for: id)).localizedDescription),
+            for: id,
+            generation: generation
+        )
     }
 
     private func reportURL(_ url: URL, for id: UUID, generation: Int) {
@@ -346,9 +323,9 @@ actor TunnelRuntime {
 
     private func finishTeardown(_ generation: Int, id: UUID, report status: TunnelStatus) {
         teardowns[generation] = nil
-        // The record was cleared before signalling, so anything here now is a
-        // newer tunnel for the same service. Reporting would hide it.
-        guard running[id] == nil else { return }
+        // Anything newer, live or already failed, owns this service's status now.
+        guard running[id] == nil, latestGeneration[id] == generation else { return }
+        latestGeneration[id] = nil
         onStatus(id, status)
     }
 

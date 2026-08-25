@@ -6,9 +6,14 @@ import Foundation
 /// opens a file, so the whole format lives in one testable place and the app
 /// layer only has to decide which lines to read.
 public struct AccessLogEntry: Hashable, Sendable, Identifiable {
-    /// Position in the file's tail. The log carries no request id, and two
-    /// requests can share a timestamp to the microsecond under load.
-    public let id: Int
+    /// Stable across polls, which is what `ForEach` needs.
+    ///
+    /// Derived from the entry rather than from its position, because the panel
+    /// re-reads the tail every couple of seconds and a line's index inside that
+    /// window moves as new requests arrive. An index would change every id on
+    /// every tick and make SwiftUI rebuild all hundred rows instead of diffing
+    /// them, exactly when there is enough traffic for it to matter.
+    public let id: String
     public let timestamp: Date
     /// The `Host` the client asked for, without its port, which is how an entry
     /// is attributed to a service. One log holds every route, so this is the
@@ -22,7 +27,7 @@ public struct AccessLogEntry: Hashable, Sendable, Identifiable {
     public let size: Int
 
     public init(
-        id: Int,
+        id: String,
         timestamp: Date,
         host: String,
         method: String,
@@ -47,9 +52,12 @@ public struct AccessLogEntry: Hashable, Sendable, Identifiable {
     /// can start mid-line, and Caddy writes proxy events into the same encoder
     /// shape, so a line this does not understand is the normal case rather than
     /// an error worth reporting.
-    public static func parse(line: some StringProtocol, id: Int) -> AccessLogEntry? {
-        guard let data = String(line).data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+    public static func parse(line: some StringProtocol) -> AccessLogEntry? {
+        // `Data(_:utf8)` rather than `String(line).data(using:)`, which copies
+        // the substring into a String first. This runs once per line of a tail
+        // read every couple of seconds.
+        let data = Data(line.utf8)
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let request = object["request"] as? [String: Any],
               let status = object["status"] as? Int,
               let host = request["host"] as? String,
@@ -64,7 +72,10 @@ public struct AccessLogEntry: Hashable, Sendable, Identifiable {
         let duration = object["duration"] as? Double ?? 0
 
         return AccessLogEntry(
-            id: id,
+            // Two requests can share a timestamp to the microsecond under load,
+            // so the whole line is the identity. It is what the log itself
+            // offers, and it is stable by construction.
+            id: String(line),
             timestamp: Date(timeIntervalSince1970: seconds),
             host: Self.hostWithoutPort(host),
             method: method,
@@ -90,24 +101,31 @@ public struct AccessLogEntry: Hashable, Sendable, Identifiable {
 
     /// Parses a whole tail, keeping the last `limit` entries for `host`.
     ///
-    /// The first line is dropped when the caller says the tail started mid-file,
-    /// matching how the helper reads the last few megabytes rather than the
-    /// whole log.
+    /// Walks backwards and stops as soon as it has enough, because the caller
+    /// only ever shows the newest entries. Read forwards this would JSON-parse
+    /// every line in the window to throw all but the last hundred away, and with
+    /// several services sharing one log most of those lines belong to a
+    /// different host anyway.
     public static func parse(
         tail: String,
         host: String? = nil,
-        limit: Int = 200,
-        droppingFirstLine: Bool = false
+        limit: Int = 200
     ) -> [AccessLogEntry] {
-        var lines = tail.split(separator: "\n", omittingEmptySubsequences: true)
-        if droppingFirstLine, !lines.isEmpty { lines.removeFirst() }
+        // A cheap substring test before the JSON decoder. The host is the field
+        // that rejects most lines, and rejecting them costs a scan rather than a
+        // parse. `nil` here means the caller wants every host.
+        let marker = host.map { "\"host\":\"\($0)" }
         var entries: [AccessLogEntry] = []
-        for (index, line) in lines.enumerated() {
-            guard let entry = parse(line: line, id: index) else { continue }
+        for line in tail.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+            if let marker, !line.contains(marker) { continue }
+            guard let entry = parse(line: line) else { continue }
+            // The marker matches a prefix, so `wishfox.localhost` would also
+            // accept `wishfox.localhost.evil.test`. The parsed host is exact.
             guard host == nil || entry.host == host else { continue }
             entries.append(entry)
+            if entries.count == limit { break }
         }
-        return Array(entries.suffix(limit))
+        return entries.reversed()
     }
 }
 
@@ -133,8 +151,6 @@ extension AccessLogEntry {
 
     /// Milliseconds, rounded, for display.
     public var milliseconds: Int {
-        let components = duration.components
-        return Int(components.seconds) * 1_000
-            + Int(Double(components.attoseconds) / 1_000_000_000_000_000)
+        Int((duration.timeInterval * 1_000).rounded())
     }
 }

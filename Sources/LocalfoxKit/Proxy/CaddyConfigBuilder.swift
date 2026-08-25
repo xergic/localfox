@@ -64,10 +64,8 @@ public struct CaddyConfigBuilder: Sendable {
         ]
         if recordsRequests {
             // Naming the logger is what routes access entries away from the
-            // default log. `should_log_credentials` is left at its default of
-            // false, which is why this file is safe to keep: it records the
-            // request line and the response, never an Authorization header or a
-            // cookie.
+            // default log. What the entries may contain is decided by the
+            // encoder in `logs(recordsRequests:)`.
             httpsServer["logs"] = ["default_logger_name": Self.accessLogName]
         }
         let config: [String: Any] = [
@@ -137,7 +135,22 @@ public struct CaddyConfigBuilder: Sendable {
             "default": defaultLog,
             Self.accessLogName: [
                 "include": [Self.accessLoggerName],
-                "encoder": ["format": "json"],
+                // A filter encoder, not a plain json one. Caddy's access log
+                // records `request>headers` and `resp_headers` in full, and its
+                // own redaction covers only Cookie, Set-Cookie, Authorization
+                // and Proxy-Authorization. An `X-API-Key` or a session header
+                // would otherwise sit in a root-owned file on disk, which is not
+                // what "record requests" should mean. Both maps are deleted
+                // outright: the panel shows the request line and the response,
+                // and nothing here ever needs a header.
+                "encoder": [
+                    "format": "filter",
+                    "wrap": ["format": "json"],
+                    "fields": [
+                        "request>headers": ["filter": "delete"],
+                        "resp_headers": ["filter": "delete"]
+                    ]
+                ],
                 "writer": [
                     "output": "file",
                     "filename": options.accessLogPath,

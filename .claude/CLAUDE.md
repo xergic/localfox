@@ -115,6 +115,11 @@ XPC and the helper builds the config. A non-loopback upstream must not be expres
 across that boundary, which is what makes the security model real rather than a
 promise.
 
+**Route loads are serialized in the helper.** `setRoutes` suspends on the admin API and the
+actor lets another call in while it does. The app syncs from several unstructured tasks, so
+two can complete out of order and leave `declaredRouteIDs` describing a table Caddy is not
+serving, which is exactly the check `setUpstream` rests on.
+
 **The app owns all state and every sync carries the whole table.** `setRoutes` is always
 the complete set of routes, never a delta, so the helper needs no store of its own and a
 restarted helper cannot hold a stale opinion. `setUpstream` is the single exception, and it
@@ -263,6 +268,21 @@ world-readable through `ps`. The hostname beside it is a `UserDefaults` key for 
 reason `SharingPreferences` is: it is a fact about the user's Cloudflare account, not about
 the project directory.
 
+**Every difference between the three modes lives on `TunnelPlan`.** How the process is
+spawned, how the share proves itself ready, and what a failure means. `TunnelRuntime` is
+spawn, drain, poll, hold and tear down, and knows nothing about which mode it is running. A
+mode-specific `if case` in the runtime is the smell that something belongs on the plan.
+
+**The runtime holds a `TunnelReader`, not the plan.** A plan carries the Cloudflare token,
+which is needed once at spawn and never again. Keeping the whole plan on the running record
+would hold a bearer credential for as long as the share and capture it again in the watch
+task's closure.
+
+**Everything about a tunnel is guarded by its generation**, including the output drain. A
+teardown clears the record before it signals, so an old cloudflared genuinely overlaps its
+replacement, and its shutdown banner would otherwise land in the new tunnel's log and be
+read as the new tunnel's verdict.
+
 **A named tunnel is live when a connection registers, not when a URL appears.** There is no
 banner to read, because the hostname is the one the user typed. Reporting it before
 `Registered tunnel connection` hands out an address that answers 502 from the edge.
@@ -288,9 +308,12 @@ user typed and follows no redirects.
 `AccessLogEntry` filters by that. A per-route logger would need `logger_names`, whose shape
 has changed between Caddy releases, for no gain.
 
-**`should_log_credentials` stays false.** That default is the reason the file is safe to
-keep: it records the request line and the response, never an `Authorization` header or a
-cookie. Say so wherever the feature is described.
+**Both header maps are deleted by a `filter` encoder.** `should_log_credentials` is not
+enough on its own: Caddy redacts only Cookie, Set-Cookie, Authorization and
+Proxy-Authorization, so an `X-API-Key` would sit in a root-owned file. `request>headers` and
+`resp_headers` are dropped outright, which is what lets the preference say headers are never
+recorded. The URL is kept whole, query string included, so say that too rather than calling
+it a path.
 
 **The default log excludes what the access log includes.** Caddy sends an entry to every log
 whose filters accept it, so without the exclusion every request also lands in `caddy.log`
@@ -305,6 +328,14 @@ browser includes the port whenever it is not the scheme's default, so an entry f
 
 **The panel polls only while it is on screen.** The access log is read over XPC, because the
 storage root is `0700 root:admin`, so a dashboard nobody is looking at must not pay for it.
+
+**The helper filters by host and reads backwards.** One log holds every route, so shipping
+the whole tail across the boundary would send six services' traffic to draw one. The tail is
+read in 64 KB chunks from the end until it has enough lines, not as a fixed multi-megabyte
+window: this runs every two seconds in the root daemon.
+
+**The parse happens off the main actor.** `AppState` is `@MainActor`, and decoding a hundred
+JSON objects there on a timer is a visible hitch for a panel that is only ever read.
 
 ## Ports and privilege
 

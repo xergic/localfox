@@ -24,8 +24,7 @@ final class AppState {
     /// Owns registration and the XPC channel. Read through `helper`.
     let helperClient = HelperClient()
     let appearance = Appearance()
-    let sharing = SharingPreferences()
-    let proxy = ProxyPreferences()
+    let preferences = Preferences()
     let tunnelTargets = TunnelTargets()
 
     /// Held here rather than in the dashboard's own state, because the popover
@@ -60,6 +59,9 @@ final class AppState {
         do {
             let loaded = try await store.load()
             assign(\.projects, loaded)
+            // Read once, so every later `hostname(for:)` and `isConfigured` is a
+            // pure read rather than a Keychain query from inside a view body.
+            tunnelTargets.load(serviceIDs: loaded.flatMap(\.services).map(\.id))
             await refreshDetectedIcons()
         } catch {
             assign(\.lastError, error.localizedDescription)
@@ -195,27 +197,28 @@ final class AppState {
     /// holds every route. Called on a timer only while a detail pane is open, so
     /// a dashboard nobody is looking at costs no XPC traffic.
     func refreshRequests(for service: Service) async {
-        guard proxy.recordsRequests, helperClient.state.canServe else {
-            assignRequests([], for: service.id)
+        guard preferences.recordsRequests, helperClient.state.canServe else {
+            assign(\.requests[service.id], nil)
             return
         }
-        guard let tail = try? await helperClient.accessLog(lines: Self.requestLogLines) else { return }
-        assignRequests(
-            AccessLogEntry.parse(tail: tail, host: service.domain.value, limit: Self.requestLimit),
-            for: service.id
-        )
+        let host = service.domain.value
+        guard let tail = try? await helperClient.accessLog(
+            host: host, lines: Self.requestLimit
+        ) else { return }
+        // Parsed off the main actor. `AppState` is `@MainActor`, and decoding a
+        // hundred JSON objects on the main thread every two seconds is a visible
+        // hitch spent on a panel that is only ever read.
+        let entries = await Task.detached {
+            AccessLogEntry.parse(tail: tail, host: host, limit: Self.requestLimit)
+        }.value
+        assign(\.requests[service.id], entries.isEmpty ? nil : entries)
     }
 
-    /// Enough lines that a busy service still fills the panel after the other
-    /// services on the machine have interleaved their own requests into the file.
-    private static let requestLogLines = 2_000
-    private static let requestLimit = 100
-
-    private func assignRequests(_ entries: [AccessLogEntry], for id: UUID) {
-        let resolved: [AccessLogEntry]? = entries.isEmpty ? nil : entries
-        guard requests[id] != resolved else { return }
-        requests[id] = resolved
-    }
+    /// The helper already filters by host and returns only this many, so asking
+    /// for more would be asking it to read further back for nothing.
+    ///
+    /// `nonisolated` so the detached parse can read it without hopping back.
+    private nonisolated static let requestLimit = 100
 
     func requests(for service: Service) -> [AccessLogEntry] {
         requests[service.id] ?? []
@@ -238,7 +241,7 @@ final class AppState {
             }
         }
         do {
-            try await helperClient.setRoutes(routes, recordsRequests: proxy.recordsRequests)
+            try await helperClient.setRoutes(routes, recordsRequests: preferences.recordsRequests)
         } catch {
             assign(\.lastError, error.localizedDescription)
         }
@@ -377,11 +380,11 @@ final class AppState {
         await stopAll(project)
         save(projects.filter { $0.id != projectID })
         for service in project.services {
-            statuses[service.id] = nil
-            logs[service.id] = nil
-            tunnels[service.id] = nil
-            requests[service.id] = nil
-            tunnelTargets.clearNamed(for: service.id)
+            assign(\.statuses[service.id], nil)
+            assign(\.logs[service.id], nil)
+            assign(\.tunnels[service.id], nil)
+            assign(\.requests[service.id], nil)
+            tunnelTargets.remove(for: service.id)
         }
         await syncProxy()
     }
@@ -501,7 +504,7 @@ final class AppState {
     ///
     /// `@Observable` notifies on an equal write too, so a blind assignment on a
     /// poll tick redraws every view that reads the property.
-    func assign<Value: Equatable>(
+    private func assign<Value: Equatable>(
         _ keyPath: ReferenceWritableKeyPath<AppState, Value>,
         _ value: Value
     ) {
@@ -555,6 +558,15 @@ final class AppState {
             return
         }
         tunnels[serviceID] = resolved
+    }
+
+    /// The one write the sharing half of `AppState` needs from another file.
+    ///
+    /// A named operation rather than exposing `assign`, which is the write guard
+    /// for the whole observable surface and has no business being callable on an
+    /// arbitrary key path from anywhere in the app target.
+    func report(_ error: String) {
+        assign(\.lastError, error)
     }
 
     func clearError() {

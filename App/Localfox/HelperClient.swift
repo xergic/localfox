@@ -194,9 +194,9 @@ final class HelperClient {
         }
     }
 
-    func accessLog(lines: Int) async throws -> String {
+    func accessLog(host: String, lines: Int) async throws -> String {
         try await call(operation: "read the request log") { proxy, reply in
-            proxy.accessLog(lines: lines) { log in
+            proxy.accessLog(host: host, lines: lines) { log in
                 reply.resume(returning: log)
             }
         }

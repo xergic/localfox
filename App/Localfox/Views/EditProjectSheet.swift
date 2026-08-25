@@ -35,6 +35,83 @@ struct EditProjectSheet: View {
     /// knows to leave the Keychain alone.
     static let tokenPlaceholder = "••••••••"
 
+    /// The SSH block of the edit sheet, still as typed.
+    ///
+    /// Strings rather than an `SSHTunnelTarget` because a half-filled form is
+    /// the normal state of one, and a model that can only hold valid values has
+    /// nowhere to put "the user is still typing the port".
+    struct SSHFields: Equatable {
+        var host = ""
+        var user = ""
+        var sshPort = ""
+        var remotePort = ""
+        var keyPath = ""
+        var publicURL = ""
+
+        /// Everything a share needs, or nil while these fields do not describe
+        /// one yet. One definition, so the validator and the save agree on what
+        /// counts as configured.
+        var target: SSHTunnelTarget? {
+            let host = host.trimmingCharacters(in: .whitespaces)
+            let user = user.trimmingCharacters(in: .whitespaces)
+            guard !host.isEmpty, !user.isEmpty,
+                  let remote = Int(remotePort.trimmingCharacters(in: .whitespaces)),
+                  (1...65_535).contains(remote)
+            else { return nil }
+
+            let trimmedSSHPort = sshPort.trimmingCharacters(in: .whitespaces)
+            let port = trimmedSSHPort.isEmpty ? 22 : Int(trimmedSSHPort)
+            guard let port, (1...65_535).contains(port) else { return nil }
+
+            let address = publicURL.trimmingCharacters(in: .whitespaces)
+            let resolved = address.isEmpty
+                ? SSHTunnelTarget.defaultPublicURL(host: host, remotePort: remote)
+                : URL(string: address.contains("://") ? address : "http://\(address)")
+            guard let resolved, resolved.host != nil else { return nil }
+
+            let key = keyPath.trimmingCharacters(in: .whitespaces)
+            return SSHTunnelTarget(
+                host: host,
+                user: user,
+                sshPort: port,
+                remotePort: remote,
+                keyPath: key.isEmpty ? nil : key,
+                publicURL: resolved
+            )
+        }
+
+        /// True once the user has started filling this block in.
+        var isTouched: Bool {
+            [host, user, remotePort].contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        }
+
+        init(_ target: SSHTunnelTarget? = nil) {
+            guard let target else { return }
+            host = target.host
+            user = target.user
+            sshPort = target.sshPort == 22 ? "" : String(target.sshPort)
+            remotePort = String(target.remotePort)
+            keyPath = target.keyPath ?? ""
+            publicURL = target.publicURL.absoluteString
+        }
+    }
+
+    /// Accepts a bare hostname as well as a URL, because the Cloudflare
+    /// dashboard shows a public hostname as `share.example.com` and that is what
+    /// a user pastes.
+    static func url(from text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard let url = URL(string: candidate),
+              url.scheme == "https",
+              let host = url.host,
+              host.contains("."),
+              !host.hasSuffix(".localhost")
+        else { return nil }
+        return url
+    }
+
     /// A service the user is still editing. Separate from `Service` so a
     /// half-typed domain never has to be a valid `LocalDomain`.
     struct EditableService: Identifiable {
@@ -48,7 +125,7 @@ struct EditProjectSheet: View {
         var namedHostname = ""
         var namedToken = ""
         /// The SSH reverse tunnel, blank for none.
-        var ssh = TunnelTargets.SSHFields()
+        var ssh = SSHFields()
         /// Whether this service can use a named tunnel at all. Cloudflare owns
         /// the origin for one, so the port has to be written down rather than
         /// discovered.
@@ -174,14 +251,13 @@ struct EditProjectSheet: View {
     private func loadTunnelTargets() {
         for index in rows.indices {
             let id = rows[index].id
-            guard let target = state.tunnelTargets.named(for: id) else { continue }
-            rows[index].namedHostname = target.hostname.host ?? target.hostname.absoluteString
-            rows[index].namedToken = state.tunnelTargets.token(for: id) == nil
-                ? ""
-                : Self.tokenPlaceholder
-        }
-        for index in rows.indices {
-            rows[index].ssh = TunnelTargets.SSHFields(state.tunnelTargets.ssh(for: rows[index].id))
+            if let hostname = state.tunnelTargets.hostname(for: id) {
+                rows[index].namedHostname = hostname.host ?? hostname.absoluteString
+                rows[index].namedToken = state.tunnelTargets.isConfigured(id)
+                    ? Self.tokenPlaceholder
+                    : ""
+            }
+            rows[index].ssh = SSHFields(state.tunnelTargets.ssh(for: id))
         }
     }
 
@@ -261,19 +337,17 @@ struct EditProjectSheet: View {
     private func saveTunnelTargets() {
         for row in rows {
             let hostname = row.namedHostname.trimmingCharacters(in: .whitespaces)
-            guard !hostname.isEmpty else {
+            if hostname.isEmpty {
                 state.tunnelTargets.clearNamed(for: row.id)
-                continue
+            } else {
+                state.tunnelTargets.setNamed(
+                    hostname: hostname,
+                    // nil leaves the stored token untouched, which is what an
+                    // unedited placeholder means.
+                    token: row.namedToken == Self.tokenPlaceholder ? nil : row.namedToken,
+                    for: row.id
+                )
             }
-            state.tunnelTargets.setNamed(
-                hostname: hostname,
-                // nil leaves the stored token untouched, which is what an
-                // unedited placeholder means.
-                token: row.namedToken == Self.tokenPlaceholder ? nil : row.namedToken,
-                for: row.id
-            )
-        }
-        for row in rows {
             state.tunnelTargets.setSSH(row.ssh.target, for: row.id)
         }
     }
@@ -333,7 +407,7 @@ private struct ServiceEditor: View {
             monospaced: true,
             error: hostnameError
         )
-        SecureLabelledField(label: "Tunnel token", text: $row.namedToken)
+        LabelledField(label: "Tunnel token", text: $row.namedToken, isSecure: true)
         Text(hint)
             .font(.system(size: 10))
             .foregroundStyle(Theme.tertiaryText)
@@ -385,12 +459,11 @@ private struct ServiceEditor: View {
         return row.hasFixedPort ? nil : "Needs a fixed port"
     }
 
+    /// The field carries "Needs a fixed port" on its own, so this explains why
+    /// rather than repeating it.
     private var hint: String {
         guard row.hasFixedPort else {
-            return """
-            A named tunnel takes its origin from your Cloudflare dashboard, so \
-            this service needs a fixed port to point it at.
-            """
+            return "A named tunnel takes its origin from your Cloudflare dashboard."
         }
         return """
         Create the tunnel in Cloudflare Zero Trust, point its public hostname \
