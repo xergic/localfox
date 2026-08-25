@@ -213,8 +213,10 @@ brand colour scores about 2:1 on white.
 
 ## Sharing
 
-Public sharing runs the bundled `cloudflared` as a quick tunnel. It is the only part of
-Localfox that reaches past loopback, so every rule here exists to keep it bounded.
+Public sharing has three modes, all driven by `TunnelRuntime` from a single `TunnelPlan`.
+A quick Cloudflare tunnel, a named Cloudflare tunnel run from a token, and an SSH reverse
+forward to a machine the user owns. This is the only part of Localfox that reaches past
+loopback, so every rule here exists to keep it bounded.
 
 **A tunnel is never persisted.** No field on `Service`, nothing in `projects.json`, so the
 store stays version 1. A share that came back after a relaunch would be a public URL
@@ -248,7 +250,61 @@ the result. A straight copy of `fetch-caddy.sh`, which hashes the archive, fails
 first run.
 
 **Quick tunnels do not support SSE**, and cap at 200 in-flight requests. Both are Cloudflare
-limits that only a named tunnel lifts. Say so rather than working around them.
+limits, and both are why the named mode exists. Say so rather than working around them.
+
+**A named tunnel needs a fixed port.** A tunnel run from a token is managed remotely, so
+Cloudflare owns the origin and the `Host` header and cloudflared ignores `--url` and
+`--http-host-header` outright. The port is therefore written down in the dashboard, and
+`AppState.shareNamed` refuses an Auto service rather than publishing whatever last held it.
+
+**The tunnel token lives in the Keychain and travels in `TUNNEL_TOKEN`.** Never in
+`projects.json`, which is meant to be copied between machines, and never in argv, which is
+world-readable through `ps`. The hostname beside it is a `UserDefaults` key for the same
+reason `SharingPreferences` is: it is a fact about the user's Cloudflare account, not about
+the project directory.
+
+**A named tunnel is live when a connection registers, not when a URL appears.** There is no
+banner to read, because the hostname is the one the user typed. Reporting it before
+`Registered tunnel connection` hands out an address that answers 502 from the edge.
+
+**SSH runs in `BatchMode`, never `StrictHostKeyChecking=accept-new`.** Accepting a new key
+unattended trusts whatever answers first. Batch mode fails instead, and the message says to
+connect once from Terminal. This is the one place Localfox is deliberately less convenient
+than the tools it borrowed from.
+
+**An SSH share is proved by probing, not by reading the log.** `ssh -N` says nothing at all
+when it works, so `PublicReachability` asks the address itself. That is also what catches
+the common failure, a remote `sshd` without `GatewayPorts yes`, which binds the forward to
+the server's own loopback and reports no error anywhere.
+
+**`PublicReachability` is not `HTTPProbe`.** `HTTPProbe` refuses anything that is not
+loopback and has to keep refusing it, because that guard is what stops a dev server walking
+the app off the machine with a redirect. The probe for a share only ever uses an address the
+user typed and follows no redirects.
+
+## Requests
+
+**Access logging is one file, not one per route.** Every entry carries its `Host`, so
+`AccessLogEntry` filters by that. A per-route logger would need `logger_names`, whose shape
+has changed between Caddy releases, for no gain.
+
+**`should_log_credentials` stays false.** That default is the reason the file is safe to
+keep: it records the request line and the response, never an `Authorization` header or a
+cookie. Say so wherever the feature is described.
+
+**The default log excludes what the access log includes.** Caddy sends an entry to every log
+whose filters accept it, so without the exclusion every request also lands in `caddy.log`
+and the diagnostics pane fills with traffic instead of proxy events.
+
+**Off means absent.** A config built with recording off carries no logger, no exclusion and
+no filename, which is what the golden test asserts.
+
+**A `Host` loses its port before it is matched.** Caddy records the header verbatim and a
+browser includes the port whenever it is not the scheme's default, so an entry from
+`localfox-run up` on 8443 would never match its own route.
+
+**The panel polls only while it is on screen.** The access log is read over XPC, because the
+storage root is `0700 root:admin`, so a dashboard nobody is looking at must not pay for it.
 
 ## Ports and privilege
 

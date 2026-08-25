@@ -113,27 +113,59 @@ and builds the config itself, so a non-loopback upstream is not expressible acro
 boundary rather than merely rejected. Every connecting client is checked against a code
 signing requirement pinned to the bundle ID and Team ID.
 
+## Requests
+
+Localfox can record what the proxy handled. Turn on **Record requests** in Preferences and
+each service's detail pane lists its recent traffic: method, path, status, duration and
+size. Caddy writes it, one JSON line per request, next to its own log.
+
+The file holds the request line and the response, and nothing else. Headers, cookies and
+`Authorization` values are never recorded, because Caddy's `should_log_credentials` is left
+off. Turning the setting off removes the logger from the proxy config entirely rather than
+leaving it running and ignored.
+
 ## Sharing
 
-A running service can be shared on the public internet from the **Share** button, or from
-`localfox-run tunnel 5173`. Localfox opens a Cloudflare quick tunnel with the bundled
-`cloudflared` and hands you a `https://….trycloudflare.com` address.
+A running service can be shared on the public internet from the **Share** button. There
+are three ways to do it. `localfox-run tunnel 5173` does the first one headless.
 
-No Cloudflare account is involved. The address is random, changes every time, and is not
-reserved to you.
+**Quick tunnel.** The default, and the only one that needs no setup. Localfox opens a
+Cloudflare quick tunnel with the bundled `cloudflared` and hands you a random
+`https://….trycloudflare.com` address. No Cloudflare account is involved. The address
+changes every time and is not reserved to you.
 
-This is the one thing Localfox does that reaches past the loopback interface, so it is
+**Named tunnel.** If you have a Cloudflare account with a domain, create a tunnel in Zero
+Trust, point its public hostname at `http://localhost:<port>`, and paste the tunnel token
+into the project's edit sheet. You get a stable address that survives a restart, and none
+of the quick tunnel's limits. The token is stored in your Keychain and passed to
+`cloudflared` through the environment, never on the command line.
+
+A named tunnel is managed by Cloudflare, so the origin lives in your dashboard rather than
+in Localfox. That means the service needs a **fixed port**, and Localfox refuses a named
+share on a service set to Auto rather than publishing whatever last held the port.
+
+**SSH tunnel.** If you have a VPS, Localfox can run `ssh -N -R` to it and let the share
+answer there. Nothing goes through a third party. The remote `sshd` needs `GatewayPorts
+yes`, or the forward only listens on the server's own loopback, and Localfox says so
+rather than reporting a tunnel that appears to work. The forward is plain HTTP unless you
+terminate TLS on that box yourself, which is what the Public address field is for.
+
+Localfox runs `ssh` in batch mode, so it will not accept an unknown host key on your
+behalf. Connect to the host once from Terminal first.
+
+Sharing is the one thing Localfox does that reaches past the loopback interface, so it is
 worth being plain about what it means. Anyone with the link reaches your dev server
 directly, with no authentication in front of it: your source maps, your `.env` values and
 every API route. Sharing stops when the service stops and when Localfox quits, and is
-never restored on relaunch.
+never restored on relaunch, whichever mode you used.
 
-The tunnel dials `127.0.0.1:<port>` directly rather than going through the proxy, so it
-works before the helper is installed and does not depend on the certificate being trusted.
-By default Localfox rewrites the origin `Host` header to `localhost:<port>`, which is what
-stops Vite and Next rejecting the request as an unknown host. Turn that off in Preferences
-if your app builds absolute URLs from the header, such as Django's `ALLOWED_HOSTS` or an
-OAuth callback.
+A Cloudflare tunnel dials `127.0.0.1:<port>` directly rather than going through the proxy,
+so it works before the helper is installed and does not depend on the certificate being
+trusted. For a quick tunnel Localfox rewrites the origin `Host` header to
+`localhost:<port>` by default, which is what stops Vite and Next rejecting the request as
+an unknown host. Turn that off in Preferences if your app builds absolute URLs from the
+header, such as Django's `ALLOWED_HOSTS` or an OAuth callback. A named tunnel takes that
+setting from your Cloudflare dashboard instead.
 
 ## Known limitations
 
@@ -145,12 +177,13 @@ OAuth callback.
 - A dev server bound to `0.0.0.0` is already reachable from your LAN regardless of what
   Localfox does. Localfox flags this rather than claiming otherwise.
 - A process that daemonizes and escapes its process group cannot be attributed or stopped.
-- Cloudflare quick tunnels do not support Server-Sent Events. WebSocket HMR works over a
-  share; an SSE-based reload does not. Lifting this needs a named tunnel and an account,
-  which Localfox does not do.
-- Quick tunnels cap at 200 concurrent in-flight requests and answer `429` beyond it.
-- A shared address is public for as long as the share is open. Cloudflare assigns it, and
-  Localfox cannot reserve, rename or password-protect it.
+- Cloudflare quick tunnels do not support Server-Sent Events, and cap at 200 concurrent
+  in-flight requests. WebSocket HMR works over a quick share; an SSE-based reload does not.
+  A named tunnel lifts both, and needs a Cloudflare account with a domain.
+- A quick tunnel's address is assigned by Cloudflare, so Localfox cannot reserve, rename or
+  password-protect it. Use a named tunnel for an address you control.
+- A named tunnel needs a service with a fixed port, because Cloudflare owns the origin.
+- A shared address is public for as long as the share is open, in every mode.
 - Only Next.js and Vite have verified HMR behaviour behind the proxy. Other frameworks are
   detected but not yet proven end to end.
 
