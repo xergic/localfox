@@ -115,6 +115,13 @@ XPC and the helper builds the config. A non-loopback upstream must not be expres
 across that boundary, which is what makes the security model real rather than a
 promise.
 
+**The app owns all state and every sync carries the whole table.** `setRoutes` is always
+the complete set of routes, never a delta, so the helper needs no store of its own and a
+restarted helper cannot hold a stale opinion. `setUpstream` is the single exception, and it
+exists only so repointing a port leaves sibling certificates warm; the helper checks the id
+against the last declared table before it patches, so the delta can never describe a route
+the app did not just send.
+
 **The helper validates its XPC peer before doing anything.** `SecCodeCopyGuestWithAttributes`
 on the connection's audit token, against a requirement pinned to the bundle ID and the
 Team ID the helper reads from its *own* signature. A root Mach service without this is a

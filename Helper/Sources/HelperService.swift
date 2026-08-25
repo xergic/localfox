@@ -212,6 +212,16 @@ private actor HelperRuntime {
     private let adminClient: CaddyAdminClient
     private let trustStore: TrustStore
     private var caddy: ManagedCaddy?
+    /// The ids from the last `setRoutes` call.
+    ///
+    /// The app owns the whole route table and every sync carries all of it.
+    /// `setUpstream` is the one delta, and it exists only so repointing a port
+    /// leaves the sibling routes and their cached certificates untouched. That
+    /// makes it an optimisation, never a second way to describe the table, so it
+    /// must not be able to reach an id the app did not just declare. Without
+    /// this the only guard is Caddy answering 404 for an unknown `@id`, which
+    /// puts the invariant in a component that knows nothing about it.
+    private var declaredRouteIDs: Set<String> = []
 
     init() {
         let layout = CaddyLayout.production()
@@ -237,6 +247,7 @@ private actor HelperRuntime {
 
         if isRunning() {
             try await adminClient.load(config: config)
+            declaredRouteIDs = Set(routes.map(\.id))
             return
         }
 
@@ -268,10 +279,14 @@ private actor HelperRuntime {
             throw error
         }
         caddy = ManagedCaddy(process: process, record: record)
+        declaredRouteIDs = Set(routes.map(\.id))
     }
 
     func setUpstream(routeID: String, port: Int) async throws {
         guard isRunning() else { throw HelperRuntimeError.caddyIsNotRunning }
+        guard declaredRouteIDs.contains(routeID) else {
+            throw HelperRuntimeError.undeclaredRoute(routeID)
+        }
         let path = "/id/svc-\(routeID)-upstream"
         let body = try CaddyConfigBuilder.upstreamPatchBody(port: port)
         try await adminClient.patch(path: path, body: body)
@@ -282,6 +297,7 @@ private actor HelperRuntime {
             await CaddyProcessControl.stop(caddy.record)
         }
         caddy = nil
+        declaredRouteIDs = []
         try? FileManager.default.removeItem(at: layout.adminSocket)
         try? FileManager.default.removeItem(at: HelperPaths.pidFile)
     }
@@ -356,6 +372,7 @@ private enum HelperPaths {
 private enum HelperRuntimeError: LocalizedError {
     case caddyIsNotRunning
     case couldNotVerifyCaddy
+    case undeclaredRoute(String)
 
     var errorDescription: String? {
         switch self {
@@ -363,6 +380,11 @@ private enum HelperRuntimeError: LocalizedError {
             "Caddy is not running. Set the routes before changing an upstream."
         case .couldNotVerifyCaddy:
             "Caddy started, but the helper could not verify its process identity."
+        case let .undeclaredRoute(routeID):
+            """
+            Route \(routeID) is not in the table the helper is serving. \
+            Set the full route table before changing an upstream.
+            """
         }
     }
 }
