@@ -20,20 +20,20 @@ enum Theme {
     static let tertiaryText = dynamic(dark: srgb(0.396, 0.396, 0.427), light: srgb(0.557, 0.557, 0.588))
 
     /// Interactive chrome only: a primary button, a selected row, a chosen
-    /// segment. The same teal as the app icon, so the accent is the brand.
+    /// segment. The same purple as the app icon, so the accent is the brand.
     /// One value for both appearances, because a brand that changes shade with
     /// the theme stops being a brand.
     static let accent = Color(nsColor: accentBrand)
-    /// The accent as text or a glyph rather than a fill. Brand teal on white is
-    /// 2.3:1, so light darkens it; dark keeps the brand value exactly.
-    static let accentText = dynamic(dark: accentBrand, light: srgb(0.0, 0.478, 0.427))
+    /// The accent as text or a glyph rather than a fill. Brand purple on white is
+    /// about 2.9:1, so light darkens it; dark keeps the brand value exactly.
+    static let accentText = dynamic(dark: accentBrand, light: srgb(0.522, 0.278, 0.780))
     /// Ink for text sitting on an accent fill. Near-black in both appearances:
-    /// black scores 8.9:1 on the teal where white scores 2.3:1. Not
+    /// black scores about 5.6:1 on the purple where white scores 3.4:1. Not
     /// `background`, which used to stand in for it and inverts in light.
     static let onAccent = Color(nsColor: ink)
 
     /// "This is healthy", never chrome. Deliberately a warmer, lighter green
-    /// than the teal accent, because the two sit next to each other wherever the
+    /// than the purple accent, because the two sit next to each other wherever the
     /// wall renders "ready" against "not ready yet".
     static let success = dynamic(dark: successDark, light: successLight)
     static let danger = dynamic(dark: srgb(0.937, 0.267, 0.267), light: srgb(0.784, 0.110, 0.110))
@@ -44,6 +44,10 @@ enum Theme {
     static let roleBoundary = dynamic(dark: srgb(0.694, 0.549, 0.973), light: srgb(0.486, 0.227, 0.929))
     static let roleWrapper = dynamic(dark: srgb(0.965, 0.694, 0.290), light: srgb(0.706, 0.325, 0.035))
     static let roleService = success
+
+    /// Something the user has to fix before HTTPS works. Amber rather than the
+    /// accent, so a blocker never reads as a control or a selection.
+    static let warning = roleWrapper
 
     /// The listening process's row in the tree, a wash of `roleService` over the
     /// card. Alpha over near-black and alpha over white do not read the same: 6%
@@ -62,7 +66,7 @@ enum Theme {
     static let pathExecutable = roleWrapper
     static let pathDirectory = dynamic(dark: srgb(0.376, 0.647, 0.980), light: srgb(0.146, 0.388, 0.922))
 
-    private static let accentBrand = srgb(0.0, 0.78431, 0.70196)
+    private static let accentBrand = srgb(0.666, 0.440, 0.874)
     private static let ink = srgb(0.055, 0.055, 0.063)
     private static let successDark = srgb(0.133, 0.773, 0.369)
     private static let successLight = srgb(0.016, 0.471, 0.341)

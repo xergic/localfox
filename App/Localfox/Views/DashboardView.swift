@@ -205,7 +205,7 @@ private struct SetupCard: View {
                         CardDivider()
                         Label(blocker.message, systemImage: "exclamationmark.triangle")
                             .font(.system(size: 11))
-                            .foregroundStyle(Theme.accentText)
+                            .foregroundStyle(Theme.warning)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     actions
@@ -286,7 +286,7 @@ private struct SetupCard: View {
     }
 
     private var helperTint: Color {
-        state.helper.canServe ? Theme.success : Theme.accentText
+        state.helper.canServe ? Theme.success : Theme.warning
     }
 
     private var trustText: String {
@@ -301,7 +301,7 @@ private struct SetupCard: View {
     }
 
     private var trustTint: Color {
-        state.trust.isUsable ? Theme.success : Theme.accentText
+        state.trust.isUsable ? Theme.success : Theme.warning
     }
 
     /// Localfox has no unprivileged fallback, so this explains the wall rather
