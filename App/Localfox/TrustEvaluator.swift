@@ -136,8 +136,11 @@ enum TrustEvaluator {
     }
 
     private static func date(for key: CFString, in values: NSDictionary) -> Date? {
+        // Security hands validity back as a CFNumber of CFAbsoluteTime, not a
+        // CFDate, so `as? Date` fails on every real certificate.
         let property = values[key] as? NSDictionary
-        return property?[kSecPropertyKeyValue] as? Date
+        guard let seconds = property?[kSecPropertyKeyValue] as? NSNumber else { return nil }
+        return Date(timeIntervalSinceReferenceDate: seconds.doubleValue)
     }
 }
 
