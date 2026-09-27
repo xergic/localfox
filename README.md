@@ -8,9 +8,24 @@ Instead of remembering which project owns which port, you open
 dev command, starts the server, finds the port it actually bound, and points a bundled
 Caddy reverse proxy at it. When the port changes, the domain does not.
 
-Pre-release. Nothing is published yet.
+## Install
 
-## Requirements
+```sh
+brew install --cask xergic/tap/localfox
+```
+
+Or download the DMG from [Releases](https://github.com/xergic/localfox/releases/latest). Every release is signed with a Developer ID and notarized by Apple, so it opens without a Gatekeeper warning.
+
+Localfox needs macOS 15 or newer on Apple Silicon.
+
+On first launch, Localfox asks you to approve its helper in System Settings and to trust
+its certificate authority. macOS may ask for your password for each. See [HTTPS](#https) for
+what is trusted and where.
+
+Remove it with `brew uninstall --cask localfox`. Add `--zap` to also delete its data and
+remove its certificate authority from your login keychain.
+
+## Requirements for building
 
 - macOS 15 or newer, Apple Silicon
 - [Xcode](https://developer.apple.com/xcode/) 26 or newer
