@@ -352,6 +352,11 @@ root. That is a CLI affordance only; the app has no such fallback.
 Push a `vMAJOR.MINOR.PATCH` tag. `.github/workflows/release.yml` archives, signs with
 Developer ID, notarizes, staples, builds the DMG and publishes it.
 
+A second `tap` job then sets `version` and `sha256` in `Casks/localfox.rb` of
+`xergic/homebrew-tap` and pushes. It runs on its own runner with the
+`HOMEBREW_TAP_TOKEN` secret, a fine-grained PAT with contents write on the tap
+only, so that token never shares a machine with the signing identity.
+
 Signing is inside-out and never uses `--deep`: caddy, then the helper, then the app.
 `--deep` is fine for `--verify` only.
 
