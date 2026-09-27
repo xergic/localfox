@@ -9,7 +9,7 @@ SCHEME := Localfox
 PROJECT := Localfox.xcodeproj
 CONFIG := Debug
 DERIVED := build
-HELPER_LABEL := net.kandera.localfox.helper
+HELPER_LABEL := net.kandera.Localfox.helper
 
 help: ## Show available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'

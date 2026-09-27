@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>net.kandera.localfox.helper</string>
+	<string>net.kandera.Localfox.helper</string>
 
 	<!-- Bundle-relative, so the daemon travels with the app and launchd can
 	     relocate it when the app moves. An absolute Program path would break
 	     the moment the user drags Localfox anywhere. -->
 	<key>BundleProgram</key>
-	<string>Contents/MacOS/net.kandera.localfox.helper</string>
+	<string>Contents/MacOS/net.kandera.Localfox.helper</string>
 
 	<!-- Launch on demand. RunAtLoad would keep a root process alive for a tool
 	     the user is not using; the first XPC message is what starts it. -->
@@ -18,7 +18,7 @@
 
 	<key>MachServices</key>
 	<dict>
-		<key>net.kandera.localfox.helper</key>
+		<key>net.kandera.Localfox.helper</key>
 		<true/>
 	</dict>
 
@@ -39,7 +39,7 @@
 	     as malware to the user. -->
 	<key>AssociatedBundleIdentifiers</key>
 	<array>
-		<string>net.kandera.localfox</string>
+		<string>net.kandera.Localfox</string>
 	</array>
 
 	<key>ProcessType</key>

@@ -8,7 +8,7 @@ import Security
 /// `projects.json` next to everything else: that file is readable, syncable and
 /// meant to be copied between machines.
 enum Keychain {
-    private static let service = "net.kandera.localfox.tunnel"
+    private static let service = "net.kandera.Localfox.tunnel"
 
     static func secret(account: String) -> String? {
         let query: [String: Any] = [

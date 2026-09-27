@@ -21,7 +21,7 @@ withExtendedLifetime(terminationHandler) {
 }
 
 private final class TerminationSignalHandler: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "net.kandera.localfox.helper.signals")
+    private let queue = DispatchQueue(label: "net.kandera.Localfox.helper.signals")
     private let service: HelperService
     private var sources: [DispatchSourceSignal] = []
     private var isStopping = false

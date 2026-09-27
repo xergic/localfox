@@ -296,7 +296,7 @@ enum CLI {
         // A dedicated queue, not `.main`. Under a Swift concurrency top-level
         // await the main queue is not drained the way a run loop would drain it,
         // so a source attached to it never fires and the child is orphaned.
-        let queue = DispatchQueue(label: "net.kandera.localfox.signals")
+        let queue = DispatchQueue(label: "net.kandera.Localfox.signals")
         return [SIGINT, SIGTERM].map { number in
             signal(number, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: number, queue: queue)

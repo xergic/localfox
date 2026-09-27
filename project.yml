@@ -44,7 +44,7 @@ targets:
         optional: true
       # The daemon plist is sealed into the bundle: launchd reads it from
       # Contents/Library/LaunchDaemons and SMAppService addresses it by filename.
-      - path: App/Localfox/Library/LaunchDaemons/net.kandera.localfox.helper.plist
+      - path: App/Localfox/Library/LaunchDaemons/net.kandera.Localfox.helper.plist
         type: file
         buildPhase:
           copyFiles:
@@ -83,7 +83,7 @@ targets:
           subpath: ""
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: net.kandera.localfox
+        PRODUCT_BUNDLE_IDENTIFIER: net.kandera.Localfox
         PRODUCT_NAME: Localfox
         INFOPLIST_FILE: App/Localfox/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/Localfox/Localfox.entitlements
@@ -113,8 +113,8 @@ targets:
       base:
         # The executable name matches the launchd label by convention, and
         # BundleProgram in the plist points at exactly this path.
-        PRODUCT_NAME: net.kandera.localfox.helper
-        PRODUCT_BUNDLE_IDENTIFIER: net.kandera.localfox.helper
+        PRODUCT_NAME: net.kandera.Localfox.helper
+        PRODUCT_BUNDLE_IDENTIFIER: net.kandera.Localfox.helper
         CODE_SIGN_ENTITLEMENTS: Helper/Helper.entitlements
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual

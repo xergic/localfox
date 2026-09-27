@@ -3,10 +3,10 @@ import Security
 
 /// The Mach service the root daemon vends, and the launchd label that owns it.
 public enum HelperIdentity {
-    public static let machServiceName = "net.kandera.localfox.helper"
-    public static let launchdLabel = "net.kandera.localfox.helper"
-    public static let plistName = "net.kandera.localfox.helper.plist"
-    public static let appBundleIdentifier = "net.kandera.localfox"
+    public static let machServiceName = "net.kandera.Localfox.helper"
+    public static let launchdLabel = "net.kandera.Localfox.helper"
+    public static let plistName = "net.kandera.Localfox.helper.plist"
+    public static let appBundleIdentifier = "net.kandera.Localfox"
 
     /// The code requirement the helper checks every connecting client against.
     ///
