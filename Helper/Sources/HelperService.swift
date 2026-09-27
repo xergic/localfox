@@ -111,35 +111,6 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
         }
     }
 
-    func installRootCATrust(reply: @escaping (String?) -> Void) {
-        let reply = XPCReply(reply)
-        Task {
-            do {
-                try await runtime.installRootCATrust()
-                reply.call(nil)
-            } catch {
-                reply.call(Self.message(for: error))
-            }
-        }
-    }
-
-    func removeRootCATrust(sha256Hex: String, reply: @escaping (String?) -> Void) {
-        guard HelperRequestValidator.isValidFingerprint(sha256Hex) else {
-            reply("The certificate fingerprint must be exactly 64 hexadecimal characters.")
-            return
-        }
-
-        let reply = XPCReply(reply)
-        Task {
-            do {
-                try await runtime.removeRootCATrust(sha256Hex: sha256Hex)
-                reply.call(nil)
-            } catch {
-                reply.call(Self.message(for: error))
-            }
-        }
-    }
-
     func caddyLog(lines: Int, reply: @escaping (String) -> Void) {
         let clampedLines = HelperRequestValidator.clampLogLines(lines)
         let reply = XPCReply(reply)
@@ -222,7 +193,6 @@ private actor HelperRuntime {
     private let layout = CaddyLayout.production()
     private let supervisor: CaddySupervisor
     private let adminClient: CaddyAdminClient
-    private let trustStore: TrustStore
     private var caddy: ManagedCaddy?
     /// The route load in flight, so the next one queues behind it.
     private var routeSync: Task<Void, any Error>?
@@ -241,7 +211,6 @@ private actor HelperRuntime {
         let layout = CaddyLayout.production()
         self.supervisor = CaddySupervisor(layout: layout)
         self.adminClient = CaddyAdminClient(socketPath: layout.adminSocket.path)
-        self.trustStore = TrustStore(rootCertificate: HelperPaths.rootCertificate)
     }
 
     func isRunning() -> Bool {
@@ -344,16 +313,8 @@ private actor HelperRuntime {
             let response = try await adminClient.rootCA(id: HelperPaths.caID)
             return try JSONDecoder().decode(RootCAResponse.self, from: response).pemData
         } catch {
-            return try trustStore.readRootCertificate()
+            return try Data(contentsOf: HelperPaths.rootCertificate)
         }
-    }
-
-    func installRootCATrust() throws {
-        try trustStore.installRootCertificate()
-    }
-
-    func removeRootCATrust(sha256Hex: String) throws {
-        try trustStore.removeRootCertificate(sha256Hex: sha256Hex)
     }
 
     func caddyLog(lines: Int) -> String {

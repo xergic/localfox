@@ -127,6 +127,12 @@ exists only so repointing a port leaves sibling certificates warm; the helper ch
 against the last declared table before it patches, so the delta can never describe a route
 the app did not just send.
 
+**Trust is the app's job, never the helper's.** macOS refuses a trust settings change
+nobody confirmed, even from root, and a LaunchDaemon has no session to show the dialog in.
+`UserTrustStore` adds the root to the login keychain and trusts it in the user domain, which
+is one password prompt. 1.0.0 and 1.0.1 tried it from the helper and left an untrusted root
+in the System keychain that only `sudo` can delete.
+
 **The helper validates its XPC peer before doing anything.** `SecCodeCopyGuestWithAttributes`
 on the connection's audit token, against a requirement pinned to the bundle ID and the
 Team ID the helper reads from its *own* signature. A root Mach service without this is a

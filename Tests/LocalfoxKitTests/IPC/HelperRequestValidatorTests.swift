@@ -3,26 +3,6 @@ import Testing
 
 @Suite("validating privileged helper requests")
 struct HelperRequestValidatorTests {
-    @Test("a SHA-256 fingerprint is exactly 64 hexadecimal characters")
-    func acceptsFingerprint() {
-        let fingerprint = String(repeating: "aB01", count: 16)
-        #expect(HelperRequestValidator.isValidFingerprint(fingerprint))
-    }
-
-    @Test("malformed fingerprints are rejected", arguments: [
-        String(repeating: "a", count: 63),
-        String(repeating: "a", count: 65),
-        String(repeating: "g", count: 64),
-        "",
-        String(repeating: "a", count: 63) + ";",
-        String(repeating: "a", count: 63) + " ",
-        String(repeating: "a", count: 63) + "/",
-        String(repeating: "a", count: 63) + "`"
-    ])
-    func rejectsFingerprint(_ fingerprint: String) {
-        #expect(HelperRequestValidator.isValidFingerprint(fingerprint) == false)
-    }
-
     @Test("route identifiers use the ProxyRoute grammar")
     func validatesRouteID() {
         #expect(HelperRequestValidator.isValidRouteID("web_1-production"))

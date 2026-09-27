@@ -123,14 +123,6 @@ public enum HelperIdentity {
     /// evaluate trust without needing root itself.
     func exportRootCA(reply: @escaping (Data?, String?) -> Void)
 
-    /// Installs the root into the System keychain and marks it trusted for SSL.
-    /// Only ever called from an explicit user action.
-    func installRootCATrust(reply: @escaping (String?) -> Void)
-
-    /// Removes a root by fingerprint, so it can never delete a different CA
-    /// that happens to share a subject name.
-    func removeRootCATrust(sha256Hex: String, reply: @escaping (String?) -> Void)
-
     /// The last lines of Caddy's log, for the diagnostics pane.
     func caddyLog(lines: Int, reply: @escaping (String) -> Void)
 

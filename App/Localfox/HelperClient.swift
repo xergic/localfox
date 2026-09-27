@@ -170,22 +170,6 @@ final class HelperClient {
         }
     }
 
-    func installRootCATrust() async throws {
-        try await call(operation: "trust the Localfox certificate") { proxy, reply in
-            proxy.installRootCATrust { message in
-                reply.resumeHelperResult(message)
-            }
-        }
-    }
-
-    func removeRootCATrust(sha256Hex: String) async throws {
-        try await call(operation: "remove the old Localfox certificate") { proxy, reply in
-            proxy.removeRootCATrust(sha256Hex: sha256Hex) { message in
-                reply.resumeHelperResult(message)
-            }
-        }
-    }
-
     func caddyLog(lines: Int) async throws -> String {
         try await call(operation: "read the proxy log") { proxy, reply in
             proxy.caddyLog(lines: lines) { log in

@@ -39,6 +39,16 @@ enum TrustEvaluator {
     }
 
     static func installedRoots() throws -> [RootCAIdentity] {
+        try installedCertificates().map { certificate in
+            let parsedCertificate = ParsedCertificate(
+                der: SecCertificateCopyData(certificate) as Data,
+                certificate: certificate
+            )
+            return try identity(for: parsedCertificate)
+        }
+    }
+
+    static func installedCertificates() throws -> [SecCertificate] {
         // The authority's own name, not "Localfox". Caddy derives the subject
         // from it as "<name> - <year> ECC Root", and a bare "Localfox" also
         // matches the CLI's development authority, which would make a
@@ -58,14 +68,7 @@ enum TrustEvaluator {
         guard let certificates = result as? [SecCertificate] else {
             throw TrustEvaluatorError.invalidKeychainResult
         }
-
-        return try certificates.map { certificate in
-            let parsedCertificate = ParsedCertificate(
-                der: SecCertificateCopyData(certificate) as Data,
-                certificate: certificate
-            )
-            return try identity(for: parsedCertificate)
-        }
+        return certificates
     }
 
     static func trustEvaluationPassed(

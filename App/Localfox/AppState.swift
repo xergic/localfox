@@ -167,7 +167,10 @@ final class AppState {
 
     func installCertificate() async {
         do {
-            try await helperClient.installRootCATrust()
+            guard let pem = try await helperClient.exportRootCA() else {
+                throw UserTrustStoreError.noRoot
+            }
+            try await UserTrustStore.install(pem: pem)
         } catch {
             assign(\.lastError, error.localizedDescription)
         }
@@ -176,7 +179,7 @@ final class AppState {
 
     func repairCertificate() async {
         if case let .stale(installed, _) = trust {
-            try? await helperClient.removeRootCATrust(sha256Hex: installed.fingerprint)
+            try? await UserTrustStore.remove(fingerprint: installed.fingerprint)
         }
         await installCertificate()
     }
@@ -184,7 +187,7 @@ final class AppState {
     func removeCertificate() async {
         guard let identity = trust.identity else { return }
         do {
-            try await helperClient.removeRootCATrust(sha256Hex: identity.fingerprint)
+            try await UserTrustStore.remove(fingerprint: identity.fingerprint)
         } catch {
             assign(\.lastError, error.localizedDescription)
         }

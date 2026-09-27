@@ -84,8 +84,9 @@ refused by every Vite-based dev server with "Blocked request. This host is not a
 
 ## HTTPS
 
-Localfox runs a local certificate authority through Caddy's internal PKI and installs its
-root into the System keychain, once, after you explicitly ask it to.
+Localfox runs a local certificate authority through Caddy's internal PKI and trusts its
+root in your login keychain, once, after you explicitly ask it to. macOS asks for your
+password to confirm. The trust covers your user account only.
 
 The CA is Localfox's own, named separately from Caddy's default, so it never collides with
 a root left behind by a hand-run `caddy trust`. Caddy's automatic trust installation is
@@ -173,8 +174,8 @@ setting from your Cloudflare dashboard instead.
 ## Known limitations
 
 - Apple Silicon only.
-- Firefox is not covered automatically. It imports roots from the System keychain by
-  default, but that can be disabled by policy.
+- Firefox is not covered automatically. It can import roots from the macOS keychain, but
+  that depends on its settings and on policy.
 - A dev server that pins `server.hmr.port` in its Vite config bypasses the proxy and its
   HMR socket will not connect.
 - A dev server bound to `0.0.0.0` is already reachable from your LAN regardless of what
