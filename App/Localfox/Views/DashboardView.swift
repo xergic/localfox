@@ -75,11 +75,6 @@ struct DashboardContent: View {
 
     private var topBar: some View {
         HStack(spacing: 10) {
-            Image(.menuBarFox)
-                .renderingMode(.template)
-                .resizable()
-                .frame(width: 20, height: 20)
-                .foregroundStyle(Theme.accentText)
             Text("Localfox")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(Theme.primaryText)

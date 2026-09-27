@@ -121,8 +121,10 @@ private struct MenuBarLabel: View {
     /// Sized here rather than with `.frame`, which SwiftUI ignores on a
     /// MenuBarExtra label.
     private static let glyph: NSImage = {
-        let image = NSImage(resource: .menuBarFox).copy() as? NSImage ?? NSImage()
-        image.size = NSSize(width: 17, height: 17)
+        let image = NSImage(
+            systemSymbolName: "server.rack",
+            accessibilityDescription: "Localfox"
+        )?.withSymbolConfiguration(.init(pointSize: 14, weight: .medium)) ?? NSImage()
         image.isTemplate = true
         return image
     }()
