@@ -78,8 +78,9 @@ struct ActionButton: View {
                 if let symbol {
                     Image(systemName: symbol).font(.system(size: 11, weight: .medium))
                 }
-                Text(title).font(.system(size: 12, weight: .medium))
+                Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
             }
+            .fixedSize()
             .foregroundStyle(isPrimary ? Theme.onAccent : tint)
             .actionChrome(isPrimary: isPrimary, isHovering: isHovering)
             .contentShape(Rectangle())
