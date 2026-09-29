@@ -54,6 +54,7 @@ make archive  # ad hoc signed Release app and DMG into dist/
 | `Sources/LocalfoxKit/` | The whole pipeline. No SwiftUI, no AppKit, no UI state. |
 | `Sources/localfox-run/` | CLI over the same pipeline. |
 | `App/Localfox/` | SwiftUI shell: `AppState`, views, theme. |
+| `App/Localfox/Telemetry.swift` | Anonymous usage signals through TelemetryDeck. |
 | `Helper/Sources/` | The root LaunchDaemon. The security boundary. |
 | `Tests/LocalfoxKitTests/` | Tests for the kit only. |
 | `Vendor/caddy/` | Pinned upstream Caddy. Git-ignored. |
@@ -185,6 +186,22 @@ trusted. For a quick tunnel Localfox rewrites the origin `Host` header to
 an unknown host. Turn that off in Preferences if your app builds absolute URLs from the
 header, such as Django's `ALLOWED_HOSTS` or an OAuth callback. A named tunnel takes that
 setting from your Cloudflare dashboard instead.
+
+## Privacy
+
+Localfox uses [TelemetryDeck](https://telemetrydeck.com/privacy/) for anonymous usage
+counts. It is on by default and sends:
+
+- A session start, with the app and macOS version.
+- That one of these happened: a project was added or removed, a service was started, the
+  certificate was trusted or untrusted, the helper was installed, or a share was opened.
+  Shares and installs carry only a coarse kind or outcome, such as `quick` or `success`.
+
+It never sends domains, hostnames, ports, paths, project names, URLs, tunnel addresses,
+certificate fingerprints or error messages.
+
+Turn it off with **Share anonymous usage data** in Preferences. It takes effect at once and
+nothing more is sent.
 
 ## Known limitations
 

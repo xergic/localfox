@@ -6,7 +6,8 @@ Project instructions for Localfox. Read `README.md` for the user-facing descript
 
 A macOS 15+ app that starts local development servers and exposes them at stable
 HTTPS `*.localhost` domains through a bundled Caddy reverse proxy. Swift 6, SwiftUI,
-strict concurrency, no third-party Swift dependencies. Sibling project to Portfox
+strict concurrency, no third-party Swift dependencies except TelemetryDeck, which only
+the app target links. The kit, the helper and the CLI never depend on it. Sibling project to Portfox
 (`/Users/ondra/Work/Portfox/portfox`), whose conventions and design this follows.
 
 ## Commands
@@ -52,6 +53,7 @@ PNGs, or build output.
 | `Sources/LocalfoxKit/` | The whole pipeline. No SwiftUI, no AppKit, no UI state. |
 | `Sources/localfox-run/` | CLI over the same pipeline. |
 | `App/Localfox/` | SwiftUI shell: `AppState`, views, theme. |
+| `App/Localfox/Telemetry.swift` | The only TelemetryDeck call site: typed signals and the opt-out switch. |
 | `Helper/Sources/` | The root LaunchDaemon. The security boundary. |
 | `Tests/LocalfoxKitTests/` | Tests for the kit only. The app and helper targets have none. |
 | `Vendor/caddy/` | Pinned upstream Caddy, fetched by `Tools/fetch-caddy.sh`. |
@@ -169,6 +171,18 @@ assigning. A blind write on a poll tick redraws the whole window.
 **No comments that restate the code.** The existing comments explain *why* a non-obvious
 choice was made, usually with the concrete bug that forced it. Match that bar or write
 nothing. Code ported from Portfox keeps its comments verbatim.
+
+## Telemetry
+
+**A signal carries no domain, path, port, project name, URL or fingerprint**, and no
+error text, which can quote any of them. Parameters are cases of a closed enum in
+`Telemetry.swift`, never a free string. A new signal is a new case there.
+
+**Snapshot and verification runs never initialize it.** The verification flags return
+before `AppDelegate` reaches `Telemetry.setEnabled`, and `setEnabled` refuses a snapshot
+request itself. The opt-out is
+`Preferences.sharesUsageData`, default on, and turning it off calls
+`TelemetryDeck.terminate()` at once.
 
 ## Adding a framework detector
 
