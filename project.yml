@@ -9,6 +9,10 @@ options:
 packages:
   LocalfoxKit:
     path: .
+  # App target only. The kit, the helper and the CLI stay dependency free.
+  TelemetryDeck:
+    url: https://github.com/TelemetryDeck/SwiftSDK
+    from: 2.14.2
 
 settings:
   base:
@@ -72,6 +76,8 @@ targets:
     dependencies:
       - package: LocalfoxKit
         product: LocalfoxKit
+      - package: TelemetryDeck
+        product: TelemetryDeck
       # `copy`, not `copyFiles`: the dependency key is different from the
       # sources one, and an unknown key is ignored silently, which lands the
       # helper in Contents/Resources where BundleProgram cannot find it.

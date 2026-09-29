@@ -90,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        Telemetry.setEnabled(Preferences().sharesUsageData)
         guard let request = SnapshotRenderer.request else { return }
         // Rendered offscreen and then exits, so no window is ever shown.
         Task { @MainActor in

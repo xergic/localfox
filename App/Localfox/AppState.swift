@@ -136,6 +136,7 @@ final class AppState {
     func installHelper() async {
         await helperClient.install()
         await finishSetupAction()
+        Telemetry.send(.helperInstalled(helperOutcome))
     }
 
     /// The button the wall shows once the daemon is registered but silent.
@@ -146,6 +147,11 @@ final class AppState {
     func reinstallHelper() async {
         await helperClient.reinstall()
         await finishSetupAction()
+    }
+
+    private var helperOutcome: Telemetry.HelperOutcome {
+        if helperClient.lastError != nil { return .failure }
+        return helperClient.state.canServe ? .ready : .needsApproval
     }
 
     /// Helper failures are reported on `helperClient.lastError`, which no view
@@ -171,8 +177,10 @@ final class AppState {
                 throw UserTrustStoreError.noRoot
             }
             try await UserTrustStore.install(pem: pem)
+            Telemetry.send(.certificateTrusted(.success))
         } catch {
             assign(\.lastError, error.localizedDescription)
+            Telemetry.send(.certificateTrusted(.failure))
         }
         await refreshTrust()
     }
@@ -188,8 +196,10 @@ final class AppState {
         guard let identity = trust.identity else { return }
         do {
             try await UserTrustStore.remove(fingerprint: identity.fingerprint)
+            Telemetry.send(.certificateUntrusted(.success))
         } catch {
             assign(\.lastError, error.localizedDescription)
+            Telemetry.send(.certificateUntrusted(.failure))
         }
         await refreshTrust()
     }
@@ -278,6 +288,7 @@ final class AppState {
     func start(_ service: Service) async {
         guard let runtime, let project = project(owning: service.id) else { return }
         await runtime.start(service, projectName: project.name)
+        Telemetry.send(.serviceStarted)
     }
 
     /// Closes the tunnel first, and waits for it.
@@ -372,6 +383,7 @@ final class AppState {
         var updated = projects
         updated.append(project)
         save(updated)
+        Telemetry.send(.projectAdded)
         Task { await refreshDetectedIcons() }
     }
 
@@ -382,6 +394,7 @@ final class AppState {
         guard let project = projects.first(where: { $0.id == projectID }) else { return }
         await stopAll(project)
         save(projects.filter { $0.id != projectID })
+        Telemetry.send(.projectRemoved)
         for service in project.services {
             assign(\.statuses[service.id], nil)
             assign(\.logs[service.id], nil)

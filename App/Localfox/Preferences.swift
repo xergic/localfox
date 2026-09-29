@@ -27,6 +27,7 @@ final class Preferences {
         static let rewriteHost = Flag(key: "sharing.rewriteHostHeader", defaultsTo: true)
         static let warningAccepted = Flag(key: "sharing.warningAccepted", defaultsTo: false)
         static let recordsRequests = Flag(key: "proxy.recordsRequests", defaultsTo: true)
+        static let sharesUsageData = Flag(key: "telemetry.sharesUsageData", defaultsTo: true)
     }
 
     private let defaults: UserDefaults
@@ -45,14 +46,18 @@ final class Preferences {
     /// Writes one JSON line per request to the proxy's access log.
     var recordsRequests: Bool { didSet { write(recordsRequests, Key.recordsRequests, oldValue) } }
 
+    /// Sends anonymous usage counts. Applying a change is `Telemetry.setEnabled`.
+    var sharesUsageData: Bool { didSet { write(sharesUsageData, Key.sharesUsageData, oldValue) } }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        for flag in [Key.rewriteHost, Key.warningAccepted, Key.recordsRequests] {
+        for flag in [Key.rewriteHost, Key.warningAccepted, Key.recordsRequests, Key.sharesUsageData] {
             defaults.register(defaults: [flag.key: flag.defaultsTo])
         }
         rewritesHostHeader = defaults.bool(forKey: Key.rewriteHost.key)
         warningAccepted = defaults.bool(forKey: Key.warningAccepted.key)
         recordsRequests = defaults.bool(forKey: Key.recordsRequests.key)
+        sharesUsageData = defaults.bool(forKey: Key.sharesUsageData.key)
     }
 
     private func write(_ value: Bool, _ flag: Flag, _ oldValue: Bool) {

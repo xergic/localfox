@@ -153,6 +153,21 @@ struct PreferencesSheet: View {
                         .padding(.horizontal, 12)
                         .padding(.bottom, 10)
                 }
+                CardDivider()
+                PreferenceRow(
+                    title: "Share anonymous usage data",
+                    subtitle: "Never includes domains, paths or ports"
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { state.preferences.sharesUsageData },
+                        set: { enabled in
+                            state.preferences.sharesUsageData = enabled
+                            Telemetry.setEnabled(enabled)
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.checkbox)
+                }
             }
         }
     }
