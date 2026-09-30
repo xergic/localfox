@@ -184,6 +184,10 @@ request itself. The opt-out is
 `Preferences.sharesUsageData`, default on, and turning it off calls
 `TelemetryDeck.terminate()` at once.
 
+**The app ID is not in the source.** `Info.plist` carries `$(TELEMETRY_APP_ID)`, which
+only the release workflow sets, from the `TELEMETRY_APP_ID` repository variable. A fork
+or a local build has an empty ID and never starts the SDK.
+
 ## Adding a framework detector
 
 Three edits, no new code paths:

@@ -203,6 +203,8 @@ certificate fingerprints or error messages.
 Turn it off with **Share anonymous usage data** in Preferences. It takes effect at once and
 nothing more is sent.
 
+Only the official release builds report. The TelemetryDeck app ID is injected by the release workflow, so a build from source or a fork sends nothing.
+
 ## Known limitations
 
 - Apple Silicon only.
