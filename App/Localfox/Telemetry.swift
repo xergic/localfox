@@ -62,13 +62,15 @@ enum Telemetry {
         }
     }
 
-    private static let appID = "6BDAE13B-BD8A-4093-ADE1-E162C0CF2C8F"
+    /// Empty unless the release workflow sets `TELEMETRY_APP_ID`, so a fork or a
+    /// local build never reports into the official dashboard.
+    private static let appID = Bundle.main.object(forInfoDictionaryKey: "TelemetryAppID") as? String ?? ""
     private static var isRunning = false
 
     static func setEnabled(_ enabled: Bool) {
         guard enabled != isRunning else { return }
         if enabled {
-            guard SnapshotRenderer.request == nil else { return }
+            guard !appID.isEmpty, SnapshotRenderer.request == nil else { return }
             TelemetryDeck.initialize(config: .init(appID: appID))
         } else {
             TelemetryDeck.terminate()
