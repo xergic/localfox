@@ -14,11 +14,9 @@ public struct PortRouteEvent: Hashable, Sendable {
 public actor PortRouteWatcher {
     public typealias Probe = @Sendable (Int) async -> Bool
 
-    /// Detached, because `PortProbe` blocks for up to its timeout and the
-    /// cooperative pool should not wait on a socket.
-    public static let loopbackProbe: Probe = { port in
-        await Task.detached { PortProbe.accepts(port: port) }.value
-    }
+    /// Called from the watch task, never on the actor. A loopback connect is
+    /// answered at once, so `PortProbe`'s timeout only bounds the rare case.
+    public static let loopbackProbe: Probe = { port in PortProbe.accepts(port: port) }
 
     /// One ordered stream rather than a callback per event. A callback that
     /// hops to the main actor in its own task can land `.running` after

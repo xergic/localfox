@@ -80,7 +80,6 @@ final class AppState {
         }
 
         await refreshSetup()
-        if !isHeadlessRun { await syncProxy() }
 
         // Off the main actor's critical path: a broken rc file can make this
         // take the full timeout, and the project list should draw regardless.
@@ -88,6 +87,8 @@ final class AppState {
             let resolved = (try? await resolver.resolve()) ?? ShellEnvironmentResolver.fallback()
             await MainActor.run { self.adopt(resolved) }
         }
+
+        if !isHeadlessRun { await syncProxy() }
     }
 
     /// The runtime cannot exist until the shell environment is known, because a
