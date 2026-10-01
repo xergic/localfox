@@ -121,6 +121,9 @@ struct EditProjectSheet: View {
         var domain: String
         let directory: URL?
         let framework: ServiceType
+        let kind: ServiceKind
+        var port: String
+        let isNew: Bool
         /// The public hostname of a named Cloudflare tunnel, or blank for none.
         var namedHostname = ""
         var namedToken = ""
@@ -141,9 +144,28 @@ struct EditProjectSheet: View {
             domain = service.domain.value
             directory = service.directory
             framework = service.framework
+            kind = service.kind
+            port = service.portMode.fixedValue.map(String.init) ?? ""
+            isNew = false
             originalDomain = service.domain.value
             hasFixedPort = service.portMode.fixedValue != nil
         }
+
+        private init(newRouteID id: UUID) {
+            self.id = id
+            name = ""
+            command = ""
+            domain = ""
+            directory = nil
+            framework = .unknown
+            kind = .portRoute
+            port = ""
+            isNew = true
+            originalDomain = ""
+            hasFixedPort = true
+        }
+
+        static func newRoute() -> EditableService { EditableService(newRouteID: UUID()) }
     }
 
     var body: some View {
@@ -154,7 +176,13 @@ struct EditProjectSheet: View {
                 VStack(spacing: 10) {
                     projectCard
                     ForEach($rows) { $row in
-                        ServiceEditor(row: $row, clash: clash(for: row))
+                        ServiceEditor(row: $row, clash: clash(for: row)) {
+                            rows.removeAll { $0.id == row.id }
+                        }
+                    }
+                    HStack {
+                        ActionButton(title: "Add Port Route", symbol: "plus") { rows.append(.newRoute()) }
+                        Spacer(minLength: 0)
                     }
                 }
                 .padding(14)
@@ -190,6 +218,7 @@ struct EditProjectSheet: View {
                         ServiceIconView(
                             type: project.services.first?.framework ?? .unknown,
                             projectIconPath: iconPath ?? state.detectedIcons[project.id],
+                            isPortRoute: project.services.allSatisfy { $0.kind == .portRoute },
                             size: 22
                         )
                     )
@@ -271,19 +300,22 @@ struct EditProjectSheet: View {
         let newSlug = LocalDomain.slug(new)
         guard oldSlug != newSlug, !newSlug.isEmpty else { return }
 
-        let names = rows.map { $0.directory?.lastPathComponent ?? $0.name }
-        let apexIndex = rows.firstIndex { $0.originalDomain == "\(LocalDomain.slug(project.name)).localhost" }
+        let commandIndices = rows.indices.filter { rows[$0].kind == .command }
+        let names = commandIndices.map { rows[$0].directory?.lastPathComponent ?? rows[$0].name }
+        let apexIndex = commandIndices.firstIndex {
+            rows[$0].originalDomain == "\(LocalDomain.slug(project.name)).localhost"
+        }
         let generated = ProjectDomains.hosts(directoryNames: names, projectSlug: oldSlug, apexIndex: apexIndex)
         let suggested = ProjectDomains.hosts(directoryNames: names, projectSlug: newSlug, apexIndex: apexIndex)
 
-        for index in rows.indices where rows[index].domain == generated[index] {
-            rows[index].domain = suggested[index]
+        for (position, index) in commandIndices.enumerated() where rows[index].domain == generated[position] {
+            rows[index].domain = suggested[position]
         }
     }
 
     // MARK: - Validation
 
-    private var editedIDs: Set<UUID> { Set(rows.map(\.id)) }
+    private var editedIDs: Set<UUID> { Set(project.services.map(\.id)).union(rows.map(\.id)) }
 
     private var canSave: Bool {
         guard !projectName.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
@@ -291,6 +323,7 @@ struct EditProjectSheet: View {
             !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
                 && LocalDomain($0.domain) != nil
                 && clash(for: $0) == nil
+                && ($0.kind == .command || Int($0.port.trimmingCharacters(in: .whitespaces)).map(Service.isRoutablePort) == true)
         }
     }
 
@@ -309,13 +342,20 @@ struct EditProjectSheet: View {
         var edited = project
         edited.name = projectName.trimmingCharacters(in: .whitespaces)
         edited.iconPath = iconPath.map { edited.iconPathValue(for: URL(fileURLWithPath: $0)) }
-        edited.services = project.services.map { service in
-            guard let row = rows.first(where: { $0.id == service.id }),
-                  let domain = LocalDomain(row.domain) else { return service }
-            var updated = service
-            updated.name = row.name.trimmingCharacters(in: .whitespaces)
+        let existing = Dictionary(uniqueKeysWithValues: project.services.map { ($0.id, $0) })
+        edited.services = rows.compactMap { row in
+            guard let domain = LocalDomain(row.domain) else { return nil }
+            let name = row.name.trimmingCharacters(in: .whitespaces)
+            let port = Int(row.port.trimmingCharacters(in: .whitespaces))
+            if row.isNew {
+                guard let port else { return nil }
+                return Service.portRoute(name: name, domain: domain, port: port, directory: project.directory)
+            }
+            guard var updated = existing[row.id] else { return nil }
+            updated.name = name
             updated.command = row.command
             updated.domain = domain
+            if row.kind == .portRoute, let port { updated.portMode = .fixed(port) }
             return updated
         }
 
@@ -335,7 +375,7 @@ struct EditProjectSheet: View {
     /// A blank hostname clears both halves, because a token kept for a share
     /// that can never start is a credential held for nothing.
     private func saveTunnelTargets() {
-        for row in rows {
+        for row in rows where row.kind == .command {
             let hostname = row.namedHostname.trimmingCharacters(in: .whitespaces)
             if hostname.isEmpty {
                 state.tunnelTargets.clearNamed(for: row.id)
@@ -370,24 +410,42 @@ struct EditProjectSheet: View {
 private struct ServiceEditor: View {
     @Binding var row: EditProjectSheet.EditableService
     let clash: String?
+    let onRemove: () -> Void
+
+    private var isRoute: Bool { row.kind == .portRoute }
 
     var body: some View {
         DetailCard(title: "Service", symbol: "square.stack.3d.up") {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    ServiceIconView(type: row.framework, size: Theme.Metrics.serviceIconSmall)
+                    ServiceIconView(type: row.framework, isPortRoute: isRoute, size: Theme.Metrics.serviceIconSmall)
                     TextField("", text: $row.name)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.primaryText)
                     Spacer(minLength: 0)
-                    TintedBadge(text: row.framework.displayName, tint: Theme.secondaryText)
+                    if isRoute {
+                        IconButton(symbol: "trash", help: "Remove route", action: onRemove)
+                    } else {
+                        TintedBadge(text: row.framework.displayName, tint: Theme.secondaryText)
+                    }
                 }
                 CardDivider()
-                LabelledField(label: "Command", text: $row.command, monospaced: true)
+                if isRoute {
+                    LabelledField(
+                        label: "Port",
+                        text: $row.port,
+                        monospaced: true,
+                        error: AddRouteSheet.portError(for: row.port)
+                    )
+                } else {
+                    LabelledField(label: "Command", text: $row.command, monospaced: true)
+                }
                 LabelledField(label: "Domain", text: $row.domain, monospaced: true, error: fieldError)
-                CardDivider()
-                sharing
+                if !isRoute {
+                    CardDivider()
+                    sharing
+                }
             }
         }
     }

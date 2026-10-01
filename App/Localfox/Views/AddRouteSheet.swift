@@ -28,13 +28,15 @@ struct AddRouteSheet: View {
         return slug.isEmpty ? "" : "\(slug).localhost"
     }
 
-    private var portError: String? {
-        guard !port.isEmpty else { return nil }
-        guard let parsedPort, Service.isRoutablePort(parsedPort) else {
+    static func portError(for text: String) -> String? {
+        guard !text.isEmpty else { return nil }
+        guard let port = Int(text.trimmingCharacters(in: .whitespaces)), Service.isRoutablePort(port) else {
             return "Use a port from 1 to 65535, other than 80 and 443"
         }
         return nil
     }
+
+    private var portError: String? { Self.portError(for: port) }
 
     private var domainError: String? {
         guard !domain.isEmpty else { return nil }
