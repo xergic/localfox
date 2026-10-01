@@ -203,13 +203,15 @@ struct ProjectSection: View {
                 // room for four buttons the way `ServiceRow` does leaves a 300pt
                 // sidebar rendering `~/Work/Wishfox/wishfox-api` as `…i`, and the
                 // path is worth more at rest than under the pointer.
-                Text(project.displayPath ?? "")
-                    .font(.lfSubtitle)
-                    .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .help(project.displayPath ?? "")
-                    .opacity(showsActions ? 0 : 1)
+                if let displayPath = project.displayPath {
+                    Text(displayPath)
+                        .font(.lfSubtitle)
+                        .foregroundStyle(Theme.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .help(displayPath)
+                        .opacity(showsActions ? 0 : 1)
+                }
                 Spacer(minLength: 0)
             }
             // Bare on the background, because a card heading above cards would
@@ -248,7 +250,7 @@ struct ProjectSection: View {
 
     private var headerActions: some View {
         HStack(spacing: 1) {
-            if anyRunning {
+            if anyActive {
                 IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop all") {
                     Task { await state.stopAll(project) }
                 }
@@ -276,6 +278,10 @@ struct ProjectSection: View {
 
     private var anyRunning: Bool {
         project.services.contains { state.status(of: $0).isRunning }
+    }
+
+    private var anyActive: Bool {
+        project.services.contains { state.status(of: $0).isActive }
     }
 }
 
@@ -339,7 +345,7 @@ struct ServiceRow: View {
         .overlay(alignment: .trailing) {
             if showsActions {
                 HStack(spacing: 1) {
-                    if status.isRunning {
+                    if status.isActive {
                         IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop") {
                             Task { await state.stop(service) }
                         }
@@ -404,7 +410,7 @@ struct ServiceRow: View {
 
     @ViewBuilder
     private var menu: some View {
-        if status.isRunning {
+        if status.isActive {
             Button("Stop") { Task { await state.stop(service) } }
             Button("Restart") { Task { await state.restart(service) } }
         } else {
@@ -418,7 +424,7 @@ struct ServiceRow: View {
                 NSPasteboard.general.setString(url.absoluteString, forType: .string)
             }
         }
-        shareItems
+        if service.kind == .command { shareItems }
         if let directory = service.directory {
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([directory])
@@ -433,8 +439,10 @@ struct ServiceRow: View {
                 )
             }
         }
-        Divider()
-        Text(service.command)
+        if service.kind == .command {
+            Divider()
+            Text(service.command)
+        }
     }
 
     private var status: ServiceStatus { state.status(of: service) }
@@ -500,6 +508,6 @@ struct ServiceRow: View {
     /// three-hundred point sidebar for nothing.
     private var reservedActionWidth: CGFloat {
         guard showsHoverActions else { return 0 }
-        return status.isRunning ? Theme.Metrics.rowActionsWidth : Theme.Metrics.rowActionsWidth - 20
+        return status.isActive ? Theme.Metrics.rowActionsWidth : Theme.Metrics.rowActionsWidth - 20
     }
 }

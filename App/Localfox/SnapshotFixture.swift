@@ -17,9 +17,13 @@ enum SnapshotFixture {
         let site = service("site", .astro, "portfox.localhost", home.appendingPathComponent("portfox-site"))
         let docs = service("docs", .svelteKit, "docs.portfox.localhost", home.appendingPathComponent("portfox-docs"))
 
+        let route = Service.portRoute(name: "app", domain: LocalDomain("docker.localhost")!, port: 8081, directory: nil)!
+        let grafana = Service.portRoute(name: "grafana", domain: LocalDomain("grafana.localhost")!, port: 3300, directory: nil)!
+
         let projects = [
             Project(name: "wishfox", directory: home.appendingPathComponent("wishfox"), services: [web, api, admin]),
             Project(name: "portfox-site", directory: home.appendingPathComponent("portfox-site"), services: [site, docs]),
+            Project(name: "docker", directory: nil, services: [route, grafana]),
         ]
         let failure = ServiceStatus.Failure(reason: .exited(code: 1), output: "")
 
@@ -30,6 +34,8 @@ enum SnapshotFixture {
                 api.id: .running(pid: 4243, port: 3041),
                 site.id: .running(pid: 4244, port: 4321),
                 docs.id: .failed(failure),
+                route.id: .running(pid: nil, port: 8081),
+                grafana.id: .waiting(port: 3300),
             ],
             tunnels: [api.id: .live(URL(string: "https://example.trycloudflare.com")!)],
             logs: [api.id: apiLog]

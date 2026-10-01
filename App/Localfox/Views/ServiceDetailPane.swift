@@ -37,12 +37,20 @@ struct ServiceDetailPane: View {
             HStack(alignment: .top, spacing: 16) {
                 DetailCard(title: "Configuration", symbol: "slider.horizontal.3") {
                     VStack(alignment: .leading, spacing: 8) {
-                        LabeledRow(label: "Framework", value: service.framework.displayName, valueFont: .lfDetail)
-                        CardDivider()
-                        LabeledRow(label: "Command", value: service.command)
-                        CardDivider()
-                        LabeledRow(label: "Directory", value: service.directory?.path ?? "None")
-                        CardDivider()
+                        switch service.kind {
+                        case .command:
+                            LabeledRow(label: "Framework", value: service.framework.displayName, valueFont: .lfDetail)
+                            CardDivider()
+                            LabeledRow(label: "Command", value: service.command)
+                            CardDivider()
+                        case .portRoute:
+                            LabeledRow(label: "Kind", value: "Port route", valueFont: .lfDetail)
+                            CardDivider()
+                        }
+                        if let directory = service.directory {
+                            LabeledRow(label: "Directory", value: directory.path)
+                            CardDivider()
+                        }
                         LabeledRow(label: "Port", value: portDescription, valueFont: .lfDetail)
                     }
                 }
@@ -64,6 +72,15 @@ struct ServiceDetailPane: View {
                             publicRow
                         }
                     }
+                }
+            }
+
+            if case let .waiting(port) = status {
+                DetailCard(title: "Waiting for the port", symbol: "hourglass") {
+                    Text(Self.explainWaiting(port: port))
+                        .font(.lfDetail)
+                        .foregroundStyle(Theme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -91,7 +108,7 @@ struct ServiceDetailPane: View {
             }
 
             requestsCard
-            logs
+            if service.kind == .command { logs }
         }
         // Polls only while this pane is on screen, and restarts when the pane
         // moves to another service. The access log is read over XPC, so a
@@ -202,7 +219,7 @@ struct ServiceDetailPane: View {
             }
             Spacer(minLength: 12)
 
-            if status.isRunning {
+            if status.isActive {
                 ActionButton(title: "Stop", symbol: "stop.fill", tint: Theme.danger) {
                     Task { await state.stop(service) }
                 }
@@ -221,7 +238,7 @@ struct ServiceDetailPane: View {
 
             // Only while running: a tunnel needs the discovered port, and under
             // Auto that does not exist until the dev server has bound it.
-            if status.isRunning {
+            if status.isRunning, service.kind == .command {
                 if tunnel.isLive {
                     ActionButton(
                         title: "Stop Sharing",
@@ -292,6 +309,14 @@ struct ServiceDetailPane: View {
                 LogText(text: text, scrolls: scrolls)
             }
         }
+    }
+
+    static func explainWaiting(port: Int) -> String {
+        """
+        Nothing accepts connections on 127.0.0.1:\(port) yet. Localfox checks \
+        every 2 seconds and routes the domain as soon as something does. A server \
+        listening only on ::1 is not reachable, because the proxy dials 127.0.0.1.
+        """
     }
 
     /// Says what went wrong in words the user can act on. An exit code alone is
