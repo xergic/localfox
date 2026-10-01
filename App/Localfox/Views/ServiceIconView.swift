@@ -6,6 +6,7 @@ import SwiftUI
 struct ServiceIconView: View {
     let type: ServiceType
     var projectIconPath: String?
+    var isPortRoute = false
     var size: CGFloat = Theme.Metrics.serviceIcon
 
     var body: some View {
@@ -15,6 +16,10 @@ struct ServiceIconView: View {
                     .resizable()
                     .scaledToFit()
                     .clipShape(RoundedRectangle(cornerRadius: size * 0.25, style: .continuous))
+            } else if isPortRoute {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: size * 0.78))
+                    .foregroundStyle(Theme.secondaryText)
             } else if let logo = NSImage(named: type.iconAssetName) {
                 Image(nsImage: logo)
                     .resizable()

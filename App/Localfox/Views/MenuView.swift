@@ -186,6 +186,7 @@ struct ProjectSection: View {
                 ServiceIconView(
                     type: project.services.first?.framework ?? .unknown,
                     projectIconPath: state.iconPath(for: project),
+                    isPortRoute: project.services.allSatisfy { $0.kind == .portRoute },
                     size: Theme.Metrics.projectIcon
                 )
                 .overlay(alignment: .bottomTrailing) {
@@ -304,7 +305,7 @@ struct ServiceRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ServiceIconView(type: service.framework)
+            ServiceIconView(type: service.framework, isPortRoute: service.kind == .portRoute)
             VStack(alignment: .leading, spacing: 1) {
                 // Beside the name, not the domain. A service name is a word, and
                 // beside the domain the badge truncated the one fact the row shows.

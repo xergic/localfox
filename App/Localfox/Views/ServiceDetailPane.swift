@@ -202,7 +202,7 @@ struct ServiceDetailPane: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            ServiceIconView(type: service.framework, size: Theme.Metrics.detailIcon)
+            ServiceIconView(type: service.framework, isPortRoute: service.kind == .portRoute, size: Theme.Metrics.detailIcon)
                 .frame(width: Theme.Metrics.detailIconTile, height: Theme.Metrics.detailIconTile)
                 .background(CardBackground())
             VStack(alignment: .leading, spacing: 4) {

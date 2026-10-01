@@ -85,12 +85,13 @@ struct ServiceSummary: View {
     @Environment(AppState.self) private var state
 
     var body: some View {
-        var (running, stopped, failed, shared) = (0, 0, 0, 0)
+        var (running, waiting, stopped, failed, shared) = (0, 0, 0, 0, 0)
         for project in state.projects {
             for service in project.services {
                 switch state.status(of: service) {
                 case .running: running += 1
-                case .stopped, .waiting: stopped += 1
+                case .waiting: waiting += 1
+                case .stopped: stopped += 1
                 case .failed: failed += 1
                 case .starting, .stopping: break
                 }
@@ -100,6 +101,9 @@ struct ServiceSummary: View {
         return HStack(spacing: 10) {
             if running > 0 {
                 SummaryCount(count: running, label: "running", dot: Theme.success)
+            }
+            if waiting > 0 {
+                SummaryCount(count: waiting, label: "waiting", dot: ServiceStatus.waiting(port: 0).tint)
             }
             if stopped > 0 {
                 SummaryCount(count: stopped, label: "stopped", dot: Theme.tertiaryText)
