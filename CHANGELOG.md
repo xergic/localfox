@@ -2,7 +2,7 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.0] - 2026-10-01
 
 ### Changed
 - The menu bar popover is redesigned. It has a header with the app icon, a status summary line (running, stopped, failed, shared), and services shown as cards.
