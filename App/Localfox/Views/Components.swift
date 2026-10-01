@@ -1,3 +1,4 @@
+import LocalfoxKit
 import SwiftUI
 
 /// Small square icon button, used in headers and hover action clusters.
@@ -7,6 +8,10 @@ struct IconButton: View {
     var help: String = ""
     var symbolSize: CGFloat = 11
     var frameSize: CGFloat = 20
+    /// A round-rect fill behind the glyph, for a button that stands alone in a header.
+    var filled = false
+    /// Spins the glyph only, so a filled button's background stays put.
+    var spins = false
     let action: () -> Void
 
     @State private var isHovering = false
@@ -16,12 +21,148 @@ struct IconButton: View {
             Image(systemName: symbol)
                 .font(.system(size: symbolSize, weight: .medium))
                 .foregroundStyle(isHovering ? Theme.primaryText : tint)
+                .rotationEffect(.degrees(spins ? 360 : 0))
+                .animation(
+                    spins ? .linear(duration: 0.9).repeatForever(autoreverses: false) : .default,
+                    value: spins
+                )
                 .frame(width: frameSize, height: frameSize)
+                .background {
+                    if filled { ControlBackground(isHovering: isHovering) }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .help(help)
+    }
+}
+
+/// The app icon, name and a subtitle, then a summary line and trailing buttons.
+/// The popover is too narrow to hold the summary beside the name, so it stacks it.
+struct AppHeader<Summary: View, Trailing: View>: View {
+    let subtitle: String
+    @ViewBuilder let summary: () -> Summary
+    @ViewBuilder let trailing: () -> Trailing
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                AppIconView(size: 34)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(AppInfo.name)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.primaryText)
+                    Text(subtitle)
+                        .font(.lfDetail)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                .lineLimit(1)
+                Spacer()
+                trailing()
+            }
+            summary()
+        }
+    }
+}
+
+struct AppIconView: View {
+    private static let image = NSApplication.shared.applicationIconImage
+
+    let size: CGFloat
+
+    var body: some View {
+        if let image = Self.image {
+            Image(nsImage: image)
+                .resizable()
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+/// A coloured dot, a bold figure and a label, as in "• 3 running".
+struct SummaryCount: View {
+    let count: Int
+    let label: String
+    let dot: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle().fill(dot).frame(width: 6, height: 6)
+            Text(String(count))
+                .font(.lfDetailStrong)
+                .foregroundStyle(Theme.primaryText)
+            Text(label)
+                .font(.lfDetail)
+                .foregroundStyle(Theme.secondaryText)
+        }
+        .fixedSize()
+    }
+}
+
+struct CardBackground: View {
+    var fill: Color = Theme.card
+    var border: Color = Theme.separator
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+        shape.fill(fill).overlay(shape.strokeBorder(border, lineWidth: 1))
+    }
+}
+
+struct ControlBackground: View {
+    var fill: Color = Theme.card
+    var border: Color = Theme.separator
+    var isHovering = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Metrics.controlRadius, style: .continuous)
+        shape.fill(isHovering ? Theme.cardHover : fill).overlay(shape.strokeBorder(border, lineWidth: 1))
+    }
+}
+
+/// A small sentence-case label washed in its own tint.
+struct TintedBadge: View {
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        Text(text)
+            .font(.lfBadge)
+            .foregroundStyle(tint)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Metrics.badgeRadius, style: .continuous).fill(tint.opacity(0.14))
+            )
+    }
+}
+
+/// A service's port while it runs, its state otherwise. Fixed width, so the
+/// hover actions can sit beside it without measuring it.
+struct PortPill: View {
+    let status: ServiceStatus
+
+    var body: some View {
+        Group {
+            if let port = status.port {
+                HStack(spacing: 3) {
+                    Text(":").foregroundStyle(Theme.tertiaryText)
+                    // A port is an identifier, not a quantity. Locale grouping
+                    // renders 3111 as "3 111".
+                    Text(String(port)).foregroundStyle(Theme.primaryText)
+                }
+                .font(.lfPort)
+            } else {
+                Text(status.label)
+                    .font(.lfBadge)
+                    .foregroundStyle(status.tint)
+            }
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .frame(width: Theme.Metrics.portPillWidth, height: 21)
+        .background(ControlBackground(fill: Theme.pill))
     }
 }
 
@@ -37,28 +178,7 @@ struct StatusPill: View {
             .lineLimit(1)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(tint?.opacity(0.15) ?? Theme.pill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(tint?.opacity(0.35) ?? Theme.border, lineWidth: 1)
-                    )
-            )
-    }
-}
-
-struct SectionHeader: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.lfSection)
-            .kerning(0.8)
-            .foregroundStyle(Theme.tertiaryText)
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 2)
+            .background(ControlBackground(fill: tint?.opacity(0.15) ?? Theme.pill, border: tint?.opacity(0.35) ?? Theme.border))
     }
 }
 
@@ -97,10 +217,10 @@ extension View {
         padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.Metrics.controlRadius, style: .continuous)
                     .fill(isPrimary ? Theme.accent : (isHovering ? Theme.cardHover : Theme.pill))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: Theme.Metrics.controlRadius, style: .continuous)
                             .strokeBorder(isPrimary ? .clear : Theme.border, lineWidth: 1)
                     )
             )

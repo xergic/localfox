@@ -22,7 +22,7 @@ final class AppState {
     private(set) var tunnels: [UUID: TunnelStatus] = [:]
 
     /// Owns registration and the XPC channel. Read through `helper`.
-    let helperClient = HelperClient()
+    let helperClient: HelperClient
     let appearance = Appearance()
     let preferences = Preferences()
     let tunnelTargets = TunnelTargets()
@@ -49,9 +49,18 @@ final class AppState {
     /// `AppState+Sharing.swift`. Nothing outside this type touches it.
     var tunnelRuntime: TunnelRuntime?
 
-    init(store: ProjectStore = ProjectStore()) {
+    init(store: ProjectStore = ProjectStore(), helperClient: HelperClient = HelperClient()) {
         self.store = store
+        self.helperClient = helperClient
     }
+
+    #if DEBUG
+    /// Snapshot only, in place of `load()`, so a populated popover renders on a
+    /// machine whose helper is not approved and would only draw the setup wall.
+    func adoptFixture(_ projects: [Project], statuses: [UUID: ServiceStatus], tunnels: [UUID: TunnelStatus], trust: RootCAStatus) {
+        (self.projects, self.statuses, self.tunnels, self.trust) = (projects, statuses, tunnels, trust)
+    }
+    #endif
 
     // MARK: - Lifecycle
 

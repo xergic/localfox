@@ -10,6 +10,7 @@ struct MenuView: View {
     var forcesHover = false
 
     @State private var listHeight: CGFloat = Theme.Metrics.maximumListHeight
+    @State private var isRefreshing = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,47 +38,85 @@ struct MenuView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Text("Localfox")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(Theme.primaryText)
-
-            if state.runningCount > 0 {
-                Text("\(state.runningCount)")
-                    .font(.lfCount)
-                    .foregroundStyle(Theme.secondaryText)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Theme.pill))
+        AppHeader(subtitle: "Local HTTPS domains") {
+            if !state.needsSetup { summary }
+        } trailing: {
+            // The helper is approved in System Settings, outside this process,
+            // and nothing else re-reads it while only the popover is open.
+            IconButton(
+                symbol: "arrow.trianglehead.2.clockwise",
+                help: "Check setup again",
+                symbolSize: Theme.Metrics.headerSymbolSize,
+                frameSize: Theme.Metrics.headerButtonSize,
+                filled: true,
+                spins: isRefreshing
+            ) {
+                guard !isRefreshing else { return }
+                isRefreshing = true
+                Task {
+                    await state.refreshSetup()
+                    isRefreshing = false
+                }
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+    }
+
+    private var summary: some View {
+        var (running, stopped, failed, shared) = (0, 0, 0, 0)
+        for project in state.projects {
+            for service in project.services {
+                switch state.status(of: service) {
+                case .running: running += 1
+                case .stopped: stopped += 1
+                case .failed: failed += 1
+                case .starting, .stopping: break
+                }
+                if state.tunnel(of: service).isLive { shared += 1 }
+            }
+        }
+        return HStack(spacing: 10) {
+            if running > 0 {
+                SummaryCount(count: running, label: "running", dot: Theme.success)
+            }
+            if stopped > 0 {
+                SummaryCount(count: stopped, label: "stopped", dot: Theme.tertiaryText)
+            }
+            if failed > 0 {
+                SummaryCount(count: failed, label: "failed", dot: Theme.danger)
+            }
+            if shared > 0 {
+                SummaryCount(count: shared, label: "shared", dot: Theme.publicShare)
+            }
+        }
     }
 
     /// Localfox has no unprivileged fallback, so an unapproved helper blocks the
     /// list rather than quietly serving on a different port.
     private var setupWall: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             Image(systemName: "lock.shield")
                 .font(.system(size: 24))
                 .foregroundStyle(Theme.accentText)
+                .padding(.bottom, 2)
             Text("Finish setting up local HTTPS")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.primaryText)
             Text(setupReason)
-                .font(.system(size: 11))
+                .font(.lfDetail)
                 .foregroundStyle(Theme.secondaryText)
                 .multilineTextAlignment(.center)
-            ActionButton(title: "Open Setup", isPrimary: true) {
+                .fixedSize(horizontal: false, vertical: true)
+            ActionButton(title: "Open Setup", symbol: "arrow.up.forward.app", isPrimary: true) {
                 WindowPresenter.showDashboard(openWindow)
             }
+            .padding(.top, 6)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 26)
-        .padding(.horizontal, 20)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 28)
     }
 
     private var setupReason: String {
@@ -89,7 +128,7 @@ struct MenuView: View {
 
     private var list: some View {
         MeasuredScrollView(height: $listHeight, maximum: Theme.Metrics.maximumListHeight, scrolls: scrolls) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 if let error = state.lastError {
                     ErrorBanner(message: error) { state.clearError() }
                 }
@@ -97,12 +136,13 @@ struct MenuView: View {
                     ProjectSection(project: project, forcesHover: forcesHover)
                 }
             }
-            .padding(10)
+            .padding(12)
+            .environment(\.rowStyle, .card)
         }
     }
 
     private var footer: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             FooterButton(symbol: "macwindow", title: "Localfox") {
                 WindowPresenter.showDashboard(openWindow)
             }
@@ -113,14 +153,17 @@ struct MenuView: View {
                 state.presentsPreferences = true
             }
             Spacer(minLength: 0)
+            Text(AppInfo.versionLabel)
+                .font(.lfVersion)
+                .foregroundStyle(Theme.tertiaryText)
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.secondaryText)
                 .keyboardShortcut("q")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 }
 
@@ -133,10 +176,11 @@ private struct FooterButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: 11))
-                Text(title).font(.system(size: 12))
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                Text(title)
             }
+            .font(.system(size: 12))
             .foregroundStyle(isHovering ? Theme.primaryText : Theme.secondaryText)
             .contentShape(Rectangle())
         }
@@ -162,12 +206,13 @@ struct ProjectSection: View {
     var showsEdit = false
 
     @Environment(AppState.self) private var state
+    @Environment(\.rowStyle) private var style
     @State private var isConfirmingRemove = false
     @State private var isEditing = false
     @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: style.sectionSpacing) {
             HStack(spacing: 9) {
                 ServiceIconView(
                     type: project.services.first?.framework ?? .unknown,
@@ -178,7 +223,7 @@ struct ProjectSection: View {
                     Circle()
                         .fill(anyRunning ? Theme.success : Theme.tertiaryText)
                         .frame(width: 7, height: 7)
-                        .overlay(Circle().strokeBorder(Theme.card, lineWidth: 1.5))
+                        .overlay(Circle().strokeBorder(style.dotRing, lineWidth: 1.5))
                         .offset(x: 2, y: 2)
                 }
                 Text(project.name)
@@ -198,15 +243,16 @@ struct ProjectSection: View {
                     .opacity(showsActions ? 0 : 1)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, style.headerHorizontalPadding)
+            .padding(.vertical, style.headerVerticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-                    .fill(Theme.card)
+                    .fill(style.headerFill)
             )
             .overlay(alignment: .trailing) {
                 if showsActions { headerActions }
             }
+            .contentShape(Rectangle())
             .onHover { isHovering = $0 }
 
             ForEach(project.services) { service in
@@ -217,7 +263,7 @@ struct ProjectSection: View {
                     showsHoverActions: showsHoverActions
                 )
             }
-            .padding(.leading, 7)
+            .padding(.leading, style.rowIndent)
         }
         .sheet(isPresented: $isEditing) {
             EditProjectSheet(project: project).environment(state)
@@ -256,7 +302,7 @@ struct ProjectSection: View {
                 IconButton(symbol: "trash", help: "Remove project") { isConfirmingRemove = true }
             }
         }
-        .padding(.trailing, 8)
+        .padding(.trailing, style.headerActionsInset)
     }
 
     private var showsActions: Bool { isHovering || forcesHover }
@@ -277,6 +323,7 @@ struct ServiceRow: View {
     var showsHoverActions = true
 
     @Environment(AppState.self) private var state
+    @Environment(\.rowStyle) private var style
     @State private var isHovering = false
     @State private var confirmsShare = false
 
@@ -285,10 +332,23 @@ struct ServiceRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            if style == .card {
+                ServiceIconView(type: service.framework)
+            }
             VStack(alignment: .leading, spacing: 1) {
-                Text(service.name)
-                    .font(.lfName)
-                    .foregroundStyle(Theme.primaryText)
+                // Beside the name, not the domain. A service name is a word, and
+                // beside the domain the badge truncated the one fact the row shows.
+                HStack(spacing: 6) {
+                    Text(service.name)
+                        .font(.lfName)
+                        .foregroundStyle(Theme.primaryText)
+                        .lineLimit(1)
+                    if style == .card, let shareLabel {
+                        TintedBadge(text: shareLabel, tint: shareTint)
+                            .fixedSize()
+                            .help(shareHelp)
+                    }
+                }
                 Text(service.domain.value)
                     .font(.lfSubtitle)
                     .foregroundStyle(Theme.secondaryText)
@@ -308,18 +368,21 @@ struct ServiceRow: View {
 
             // A public tunnel the user has forgotten is the failure that
             // matters here, so it is marked at rest and not behind hover.
-            if tunnel != .off {
-                Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(shareTint)
-                    .help(shareHelp)
+            if style == .card {
+                PortPill(status: status)
+            } else {
+                if tunnel != .off {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(shareTint)
+                        .help(shareHelp)
+                }
+                StatusPill(text: status.label, tint: status.tint)
+                    .fixedSize()
             }
-
-            StatusPill(text: status.label, tint: status.tint)
-                .fixedSize()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, style.horizontalPadding)
+        .padding(.vertical, style.verticalPadding)
         .overlay(alignment: .trailing) {
             if showsActions {
                 HStack(spacing: 1) {
@@ -345,25 +408,16 @@ struct ServiceRow: View {
                     }
                 }
                 .padding(3)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Theme.cardHover)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(Theme.border, lineWidth: 1)
-                        )
-                )
-                .padding(.trailing, Theme.Metrics.portPillWidth + 14)
+                .background(ControlBackground(fill: Theme.cardHover))
+                .padding(.trailing, Theme.Metrics.portPillWidth + style.horizontalPadding + 4)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Metrics.rowRadius, style: .continuous)
-                .fill(isHovering || isSelected ? Theme.cardHover : .clear)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Metrics.rowRadius, style: .continuous)
-                        .strokeBorder(isSelected ? Theme.accent : .clear, lineWidth: 1.5)
-                )
-        )
+        .background {
+            let shape = RoundedRectangle(cornerRadius: style.radius, style: .continuous)
+            shape
+                .fill(isHighlighted || isSelected ? Theme.cardHover : style.restFill)
+                .overlay(shape.strokeBorder(borderColor, lineWidth: isSelected ? 1.5 : 1))
+        }
         .contentShape(Rectangle())
         .onTapGesture { selection?.wrappedValue = service.id }
         .onHover { hovering in
@@ -384,6 +438,13 @@ struct ServiceRow: View {
             Text(SharingWarning.exposure(.quick))
         }
         .opacity(status.isTransitioning ? 0.5 : 1)
+    }
+
+    private var isHighlighted: Bool { isHovering || showsActions }
+
+    private var borderColor: Color {
+        if isSelected { return Theme.accent }
+        return isHighlighted ? style.hoverBorder : style.restBorder
     }
 
     @ViewBuilder
@@ -428,9 +489,18 @@ struct ServiceRow: View {
     /// healthy-looking antenna on a share that never opened.
     private var shareTint: Color {
         switch tunnel {
-        case .live: Theme.success
+        case .live: Theme.publicShare
         case .failed: Theme.danger
         case .starting, .off: Theme.accentText
+        }
+    }
+
+    private var shareLabel: String? {
+        switch tunnel {
+        case .off: nil
+        case .starting: "Sharing"
+        case .live: "Shared"
+        case .failed: "Share failed"
         }
     }
 

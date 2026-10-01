@@ -6,7 +6,7 @@ import SwiftUI
 /// Renders a surface to a PNG and exits, so the design can be reviewed without
 /// Screen Recording permission and without hand-driving the menu bar.
 ///
-/// Usage: `Localfox --snapshot out.png [--hover] [--light]`, `--snapshot-dashboard out.png`
+/// Usage: `Localfox --snapshot out.png [--hover] [--light] [--demo]`, `--snapshot-dashboard out.png`
 /// or `--snapshot-prefs out.png`.
 @MainActor
 enum SnapshotRenderer {
@@ -173,8 +173,14 @@ enum SnapshotRenderer {
     static var requestedPath: String? { request?.path }
 
     static func run(_ request: Request, state: AppState) async {
+        #if DEBUG
+        let usesFixture = CommandLine.arguments.contains("--demo")
+        let state = usesFixture ? SnapshotFixture.state() : state
+        #else
+        let usesFixture = false
+        #endif
         if CommandLine.arguments.contains("--light") { state.appearance.force(.light) }
-        await state.load()
+        if !usesFixture { await state.load() }
 
         let renderer = ImageRenderer(content: content(for: request.surface, state: state))
         renderer.scale = 2

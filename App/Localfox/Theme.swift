@@ -37,6 +37,8 @@ enum Theme {
     /// wall renders "ready" against "not ready yet".
     static let success = dynamic(dark: successDark, light: successLight)
     static let danger = dynamic(dark: srgb(0.937, 0.267, 0.267), light: srgb(0.784, 0.110, 0.110))
+    /// A live public share, in the row badge and the summary dot alike.
+    static let publicShare = pathDirectory
 
     static let pill = dynamic(dark: srgb(0.137, 0.137, 0.149), light: srgb(0.925, 0.925, 0.937))
 
@@ -88,6 +90,11 @@ enum Theme {
         static let maximumListHeight: CGFloat = 460
         static let cardRadius: CGFloat = 10
         static let rowRadius: CGFloat = 9
+        /// Action buttons, pills and the filled header buttons.
+        static let controlRadius: CGFloat = 8
+        static let badgeRadius: CGFloat = 5
+        static let rowPaddingH: CGFloat = 12
+        static let rowPaddingV: CGFloat = 9
         static let serviceIcon: CGFloat = 22
         /// Beside a service name on the bottom line of a project-first cell.
         static let serviceIconSmall: CGFloat = 13
@@ -103,6 +110,9 @@ enum Theme {
         static let projectActionsWidth: CGFloat = 92
         static let projectIcon: CGFloat = 22
 
+        /// The filled buttons beside the app name in the popover.
+        static let headerButtonSize: CGFloat = 30
+        static let headerSymbolSize: CGFloat = 13
         /// The dashboard top bar is 52 points tall, so its buttons can be far larger
         /// than a 20 point row action without crowding anything.
         static let dashboardButtonSize: CGFloat = 32
@@ -140,9 +150,13 @@ extension Font {
     static let lfProject = Font.system(size: 13, weight: .bold)
     static let lfSubtitle = Font.mono(11)
     static let lfPort = Font.mono(12, .medium)
-    static let lfVersion = Font.mono(10)
+    /// Every version number, Localfox's own included.
+    static let lfVersion = Font.mono(11)
     static let lfSection = Font.system(size: 10, weight: .semibold)
-    static let lfCount = Font.mono(11, .medium)
+    /// Proportional secondary text: subtitles and summary labels.
+    static let lfDetail = Font.system(size: 12)
+    static let lfDetailStrong = Font.system(size: 12, weight: .semibold)
+    static let lfBadge = Font.system(size: 11, weight: .medium)
 }
 
 extension View {

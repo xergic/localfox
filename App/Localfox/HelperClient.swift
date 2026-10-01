@@ -16,6 +16,14 @@ final class HelperClient {
         state = Self.registeredState(for: SMAppService.daemon(plistName: HelperIdentity.plistName).status)
     }
 
+    #if DEBUG
+    /// Snapshot only. Never registers or connects, so a fixture can claim a
+    /// helper this machine has not approved.
+    init(fixture state: HelperState) {
+        self.state = state
+    }
+    #endif
+
     func install() async {
         if let blocker = HelperIdentity.registrationBlocker() {
             assignError(blocker.message)

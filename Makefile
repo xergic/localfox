@@ -54,7 +54,9 @@ reinstall-helper: ## Show launchd's view of the helper, then clear the registrat
 snapshot: app ## Render the popover, dashboard and preferences to snapshots/
 	@mkdir -p snapshots
 	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot snapshots/popover.png
-	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot snapshots/popover-hover.png --hover
+	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot snapshots/popover-demo.png --demo
+	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot snapshots/popover-demo-light.png --demo --light
+	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot snapshots/popover-hover.png --demo --hover
 	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot-dashboard snapshots/dashboard.png
 	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot-prefs snapshots/preferences.png
 	@$(DERIVED)/Build/Products/$(CONFIG)/Localfox.app/Contents/MacOS/Localfox --snapshot snapshots/popover-light.png --light
