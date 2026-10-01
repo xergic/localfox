@@ -79,7 +79,7 @@ final class AppState {
         }
 
         await refreshSetup()
-        await syncProxy()
+        if !isHeadlessRun { await syncProxy() }
 
         // Off the main actor's critical path: a broken rc file can make this
         // take the full timeout, and the project list should draw regardless.

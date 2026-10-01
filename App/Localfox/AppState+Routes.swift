@@ -7,6 +7,12 @@ import LocalfoxKit
 /// lint limit.
 @MainActor
 extension AppState {
+    /// A signed build's helper accepts these runs, so a table they sent or cleared
+    /// would replace the real app's.
+    var isHeadlessRun: Bool {
+        SnapshotRenderer.request != nil || CommandLine.arguments.contains("--verify-runtime")
+    }
+
     /// One consumer loop, so events reach `setStatus` in the order the watcher
     /// made them. The task inherits the main actor, so there is no hop per event.
     func startRouteWatcher() {
@@ -26,7 +32,7 @@ extension AppState {
     /// Caddy's table would keep serving the domain with nothing on screen to
     /// stop it.
     func clearProxy() async {
-        guard helperClient.state.canServe else { return }
+        guard helperClient.state.canServe, !isHeadlessRun else { return }
         do {
             try await helperClient.setRoutes([], recordsRequests: preferences.recordsRequests)
         } catch {
