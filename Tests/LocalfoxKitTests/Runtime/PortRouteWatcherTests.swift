@@ -8,8 +8,9 @@ private final class Recorder: Sendable {
 
     /// Drains the watcher's stream for the life of the test.
     init(_ watcher: PortRouteWatcher) {
+        let events = watcher.events
         Task {
-            for await event in watcher.events { self.statuses.withLock { $0.append(event.status) } }
+            for await event in events { self.statuses.withLock { $0.append(event.status) } }
         }
     }
 
@@ -58,9 +59,13 @@ struct PortRouteWatcherTests {
         let recorder = Recorder(watcher)
         let id = UUID()
         await watcher.start(id: id, port: port)
-        try await Task.sleep(for: .milliseconds(30))
+        for _ in 0..<200 where release.withLock({ $0 == nil }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(release.withLock { $0 != nil }, "the probe never parked")
         await watcher.stop(id: id)
         release.withLock { $0?.resume(); $0 = nil }
+        try await recorder.waitUntil { $0.last == .stopped }
         try await Task.sleep(for: .milliseconds(50))
         #expect(recorder.all == [.starting, .stopped])
         #expect(await !watcher.isWatching(id))
