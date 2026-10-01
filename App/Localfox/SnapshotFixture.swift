@@ -3,10 +3,11 @@ import Foundation
 import LocalfoxKit
 
 /// The populated machine `--demo` renders: an approved helper, a trusted root,
-/// and one service in each state the popover draws differently.
+/// and one service in each state the popover draws differently. The dashboard
+/// opens on the shared one, the service with the most to show.
 @MainActor
 enum SnapshotFixture {
-    static func state() -> AppState {
+    static func state() -> (state: AppState, selection: UUID) {
         let state = AppState(helperClient: HelperClient(fixture: .ready(version: "fixture", caddyRunning: true)))
         let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Projects")
 
@@ -21,7 +22,6 @@ enum SnapshotFixture {
             Project(name: "portfox-site", directory: home.appendingPathComponent("portfox-site"), services: [site, docs]),
         ]
         let failure = ServiceStatus.Failure(reason: .exited(code: 1), output: "")
-        let identity = RootCAIdentity(fingerprint: "00", commonName: "Localfox Root", notBefore: .now, notAfter: .distantFuture)
 
         state.adoptFixture(
             projects,
@@ -32,10 +32,20 @@ enum SnapshotFixture {
                 docs.id: .failed(failure),
             ],
             tunnels: [api.id: .live(URL(string: "https://example.trycloudflare.com")!)],
-            trust: .trusted(identity, expiresIn: 86_400 * 365)
+            logs: [api.id: apiLog]
         )
-        return state
+        return (state, api.id)
     }
+
+    private static let apiLog = """
+        > api@0.4.2 dev
+        > nest start --watch
+
+        [Nest] 4243  - LOG [NestFactory] Starting Nest application...
+        [Nest] 4243  - LOG [InstanceLoader] AppModule dependencies initialized
+        [Nest] 4243  - LOG [RoutesResolver] WishlistController {/wishlists}
+        [Nest] 4243  - LOG [NestApplication] Nest application successfully started
+        """
 
     private static func service(_ name: String, _ framework: ServiceType, _ domain: String, _ directory: URL) -> Service {
         Service(name: name, directory: directory, framework: framework, command: "pnpm dev", domain: LocalDomain(domain)!)

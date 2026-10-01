@@ -38,8 +38,8 @@ struct MenuView: View {
     }
 
     private var header: some View {
-        AppHeader(subtitle: "Local HTTPS domains") {
-            if !state.needsSetup { summary }
+        AppHeader(subtitle: "Local HTTPS domains", stacksSummary: true) {
+            if !state.needsSetup { ServiceSummary() }
         } trailing: {
             // The helper is approved in System Settings, outside this process,
             // and nothing else re-reads it while only the popover is open.
@@ -62,35 +62,6 @@ struct MenuView: View {
         .padding(.horizontal, 14)
         .padding(.top, 12)
         .padding(.bottom, 10)
-    }
-
-    private var summary: some View {
-        var (running, stopped, failed, shared) = (0, 0, 0, 0)
-        for project in state.projects {
-            for service in project.services {
-                switch state.status(of: service) {
-                case .running: running += 1
-                case .stopped: stopped += 1
-                case .failed: failed += 1
-                case .starting, .stopping: break
-                }
-                if state.tunnel(of: service).isLive { shared += 1 }
-            }
-        }
-        return HStack(spacing: 10) {
-            if running > 0 {
-                SummaryCount(count: running, label: "running", dot: Theme.success)
-            }
-            if stopped > 0 {
-                SummaryCount(count: stopped, label: "stopped", dot: Theme.tertiaryText)
-            }
-            if failed > 0 {
-                SummaryCount(count: failed, label: "failed", dot: Theme.danger)
-            }
-            if shared > 0 {
-                SummaryCount(count: shared, label: "shared", dot: Theme.publicShare)
-            }
-        }
     }
 
     /// Localfox has no unprivileged fallback, so an unapproved helper blocks the
@@ -137,7 +108,6 @@ struct MenuView: View {
                 }
             }
             .padding(12)
-            .environment(\.rowStyle, .card)
         }
     }
 
@@ -206,13 +176,12 @@ struct ProjectSection: View {
     var showsEdit = false
 
     @Environment(AppState.self) private var state
-    @Environment(\.rowStyle) private var style
     @State private var isConfirmingRemove = false
     @State private var isEditing = false
     @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: style.sectionSpacing) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 9) {
                 ServiceIconView(
                     type: project.services.first?.framework ?? .unknown,
@@ -223,7 +192,7 @@ struct ProjectSection: View {
                     Circle()
                         .fill(anyRunning ? Theme.success : Theme.tertiaryText)
                         .frame(width: 7, height: 7)
-                        .overlay(Circle().strokeBorder(style.dotRing, lineWidth: 1.5))
+                        .overlay(Circle().strokeBorder(Theme.background, lineWidth: 1.5))
                         .offset(x: 2, y: 2)
                 }
                 Text(project.name)
@@ -243,12 +212,9 @@ struct ProjectSection: View {
                     .opacity(showsActions ? 0 : 1)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, style.headerHorizontalPadding)
-            .padding(.vertical, style.headerVerticalPadding)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-                    .fill(style.headerFill)
-            )
+            // Bare on the background, because a card heading above cards would
+            // read as one more row.
+            .padding(4)
             .overlay(alignment: .trailing) {
                 if showsActions { headerActions }
             }
@@ -263,7 +229,6 @@ struct ProjectSection: View {
                     showsHoverActions: showsHoverActions
                 )
             }
-            .padding(.leading, style.rowIndent)
         }
         .sheet(isPresented: $isEditing) {
             EditProjectSheet(project: project).environment(state)
@@ -302,7 +267,7 @@ struct ProjectSection: View {
                 IconButton(symbol: "trash", help: "Remove project") { isConfirmingRemove = true }
             }
         }
-        .padding(.trailing, style.headerActionsInset)
+        .padding(.trailing, Theme.Metrics.rowPaddingH)
     }
 
     private var showsActions: Bool { isHovering || forcesHover }
@@ -323,7 +288,6 @@ struct ServiceRow: View {
     var showsHoverActions = true
 
     @Environment(AppState.self) private var state
-    @Environment(\.rowStyle) private var style
     @State private var isHovering = false
     @State private var confirmsShare = false
 
@@ -332,18 +296,18 @@ struct ServiceRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            if style == .card {
-                ServiceIconView(type: service.framework)
-            }
+            ServiceIconView(type: service.framework)
             VStack(alignment: .leading, spacing: 1) {
                 // Beside the name, not the domain. A service name is a word, and
                 // beside the domain the badge truncated the one fact the row shows.
+                // A public tunnel the user has forgotten is the failure that
+                // matters here, so it is marked at rest and not behind hover.
                 HStack(spacing: 6) {
                     Text(service.name)
                         .font(.lfName)
                         .foregroundStyle(Theme.primaryText)
                         .lineLimit(1)
-                    if style == .card, let shareLabel {
+                    if let shareLabel {
                         TintedBadge(text: shareLabel, tint: shareTint)
                             .fixedSize()
                             .help(shareHelp)
@@ -366,23 +330,10 @@ struct ServiceRow: View {
 
             Spacer(minLength: 0)
 
-            // A public tunnel the user has forgotten is the failure that
-            // matters here, so it is marked at rest and not behind hover.
-            if style == .card {
-                PortPill(status: status)
-            } else {
-                if tunnel != .off {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(shareTint)
-                        .help(shareHelp)
-                }
-                StatusPill(text: status.label, tint: status.tint)
-                    .fixedSize()
-            }
+            PortPill(status: status)
         }
-        .padding(.horizontal, style.horizontalPadding)
-        .padding(.vertical, style.verticalPadding)
+        .padding(.horizontal, Theme.Metrics.rowPaddingH)
+        .padding(.vertical, Theme.Metrics.rowPaddingV)
         .overlay(alignment: .trailing) {
             if showsActions {
                 HStack(spacing: 1) {
@@ -409,15 +360,10 @@ struct ServiceRow: View {
                 }
                 .padding(3)
                 .background(ControlBackground(fill: Theme.cardHover))
-                .padding(.trailing, Theme.Metrics.portPillWidth + style.horizontalPadding + 4)
+                .padding(.trailing, Theme.Metrics.portPillWidth + Theme.Metrics.rowPaddingH + 4)
             }
         }
-        .background {
-            let shape = RoundedRectangle(cornerRadius: style.radius, style: .continuous)
-            shape
-                .fill(isHighlighted || isSelected ? Theme.cardHover : style.restFill)
-                .overlay(shape.strokeBorder(borderColor, lineWidth: isSelected ? 1.5 : 1))
-        }
+        .background(CardBackground(fill: rowFill, border: borderColor))
         .contentShape(Rectangle())
         .onTapGesture { selection?.wrappedValue = service.id }
         .onHover { hovering in
@@ -442,9 +388,14 @@ struct ServiceRow: View {
 
     private var isHighlighted: Bool { isHovering || showsActions }
 
+    private var rowFill: Color {
+        if isSelected { return Theme.selectedRow }
+        return isHighlighted ? Theme.cardHover : Theme.card
+    }
+
     private var borderColor: Color {
-        if isSelected { return Theme.accent }
-        return isHighlighted ? style.hoverBorder : style.restBorder
+        if isSelected { return Theme.selectedBorder }
+        return isHighlighted ? Theme.border : Theme.separator
     }
 
     @ViewBuilder
@@ -486,7 +437,7 @@ struct ServiceRow: View {
 
     /// Matches `ServiceStatus.tint`: green only when the tunnel is actually
     /// carrying traffic, red when it failed. One tint for both would show a
-    /// healthy-looking antenna on a share that never opened.
+    /// healthy-looking badge on a share that never opened.
     private var shareTint: Color {
         switch tunnel {
         case .live: Theme.publicShare

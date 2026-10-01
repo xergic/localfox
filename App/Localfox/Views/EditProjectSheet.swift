@@ -225,7 +225,7 @@ struct EditProjectSheet: View {
     }
 
     private var projectCard: some View {
-        DetailCard(title: "PROJECT", symbol: "shippingbox") {
+        DetailCard(title: "Project", symbol: "shippingbox") {
             VStack(alignment: .leading, spacing: 8) {
                 LabelledField(label: "Name", text: $projectName)
                     .onChange(of: projectName) { old, new in suggestDomains(from: old, to: new) }
@@ -372,7 +372,7 @@ private struct ServiceEditor: View {
     let clash: String?
 
     var body: some View {
-        DetailCard(title: "SERVICE", symbol: "square.stack.3d.up") {
+        DetailCard(title: "Service", symbol: "square.stack.3d.up") {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     ServiceIconView(type: row.framework, size: Theme.Metrics.serviceIconSmall)
@@ -381,7 +381,7 @@ private struct ServiceEditor: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.primaryText)
                     Spacer(minLength: 0)
-                    StatusPill(text: row.framework.displayName)
+                    TintedBadge(text: row.framework.displayName, tint: Theme.secondaryText)
                 }
                 CardDivider()
                 LabelledField(label: "Command", text: $row.command, monospaced: true)
@@ -397,10 +397,9 @@ private struct ServiceEditor: View {
     /// travels with a copied project.
     @ViewBuilder
     private var sharing: some View {
-        Text("PUBLIC SHARING")
-            .font(.lfSection)
-            .kerning(0.8)
-            .foregroundStyle(Theme.tertiaryText)
+        Text("Public sharing")
+            .font(.lfDetailStrong)
+            .foregroundStyle(Theme.secondaryText)
         LabelledField(
             label: "Cloudflare hostname",
             text: $row.namedHostname,

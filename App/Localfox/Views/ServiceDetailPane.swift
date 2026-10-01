@@ -5,6 +5,7 @@ import SwiftUI
 /// Everything known about one service, including its recent output.
 struct ServiceDetailPane: View {
     let service: Service
+    let project: Project
     var scrolls = true
 
     @Environment(AppState.self) private var state
@@ -34,25 +35,25 @@ struct ServiceDetailPane: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             HStack(alignment: .top, spacing: 16) {
-                DetailCard(title: "CONFIGURATION", symbol: "slider.horizontal.3") {
+                DetailCard(title: "Configuration", symbol: "slider.horizontal.3") {
                     VStack(alignment: .leading, spacing: 8) {
-                        LabeledRow(label: "Framework", value: service.framework.displayName)
+                        LabeledRow(label: "Framework", value: service.framework.displayName, valueFont: .lfDetail)
                         CardDivider()
                         LabeledRow(label: "Command", value: service.command)
                         CardDivider()
                         LabeledRow(label: "Directory", value: service.directory.path)
                         CardDivider()
-                        LabeledRow(label: "Port", value: portDescription)
+                        LabeledRow(label: "Port", value: portDescription, valueFont: .lfDetail)
                     }
                 }
-                DetailCard(title: "STATUS", symbol: "bolt.horizontal") {
+                DetailCard(title: "Status", symbol: "bolt.horizontal") {
                     VStack(alignment: .leading, spacing: 8) {
-                        LabeledRow(label: "State", value: status.label, tint: status.tint)
+                        LabeledRow(label: "State", value: status.title, valueFont: .lfDetail, tint: status.tint)
                         CardDivider()
                         LabeledRow(label: "Domain", value: service.domain.value)
                         if case let .running(pid, port) = status {
                             CardDivider()
-                            LabeledRow(label: "Process", value: "pid \(pid)")
+                            LabeledRow(label: "PID", value: String(pid))
                             CardDivider()
                             LabeledRow(label: "Proxying", value: "127.0.0.1:\(port)")
                         }
@@ -65,10 +66,10 @@ struct ServiceDetailPane: View {
             }
 
             if case let .failed(failure) = status {
-                DetailCard(title: "WHY IT FAILED", symbol: "exclamationmark.triangle") {
+                DetailCard(title: "Why it failed", symbol: "exclamationmark.triangle") {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(Self.explain(failure.reason))
-                            .font(.system(size: 12))
+                            .font(.lfDetail)
                             .foregroundStyle(Theme.danger)
                             .fixedSize(horizontal: false, vertical: true)
                         // Inline rather than a pointer to the diagnostics panel.
@@ -121,17 +122,17 @@ struct ServiceDetailPane: View {
         case .off:
             EmptyView()
         case .starting:
-            LabeledRow(label: "Public URL", value: "Opening tunnel…", tint: Theme.accentText)
+            LabeledRow(label: "Public URL", value: "Opening tunnel…", valueFont: .lfDetail, tint: Theme.accentText)
         case let .live(url):
             HStack(spacing: 6) {
-                LabeledRow(label: "Public URL", value: url.absoluteString, tint: Theme.success)
+                LabeledRow(label: "Public URL", value: url.absoluteString, tint: Theme.publicShare)
                 IconButton(symbol: "doc.on.doc", help: "Copy public URL") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url.absoluteString, forType: .string)
                 }
             }
         case let .failed(message):
-            LabeledRow(label: "Public URL", value: message, tint: Theme.danger)
+            LabeledRow(label: "Public URL", value: message, valueFont: .lfDetail, tint: Theme.danger)
         }
     }
 
@@ -182,16 +183,22 @@ struct ServiceDetailPane: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(service.name)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Theme.primaryText)
+            ServiceIconView(type: service.framework, size: Theme.Metrics.detailIcon)
+                .frame(width: Theme.Metrics.detailIconTile, height: Theme.Metrics.detailIconTile)
+                .background(CardBackground())
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(service.name)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Theme.primaryText)
+                    TintedBadge(text: "Project: \(project.name)", tint: Theme.secondaryText)
+                }
                 Text("https://\(service.domain.value)")
                     .font(.lfSubtitle)
                     .foregroundStyle(Theme.secondaryText)
                     .textSelection(.enabled)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 12)
 
             if status.isRunning {
                 ActionButton(title: "Stop", symbol: "stop.fill", tint: Theme.danger) {
@@ -207,7 +214,7 @@ struct ServiceDetailPane: View {
             }
 
             if let url = state.url(for: service) {
-                ActionButton(title: "Open", symbol: "globe") { NSWorkspace.shared.open(url) }
+                ActionButton(title: "Open", symbol: "globe", isPrimary: status.isRunning) { NSWorkspace.shared.open(url) }
             }
 
             // Only while running: a tunnel needs the discovered port, and under
@@ -247,14 +254,14 @@ struct ServiceDetailPane: View {
     @ViewBuilder
     private var requestsCard: some View {
         let entries = state.requests(for: service)
-        DetailCard(title: "REQUESTS", symbol: "arrow.left.arrow.right") {
+        DetailCard(title: "Requests", symbol: "arrow.left.arrow.right") {
             if !state.preferences.recordsRequests {
                 Text("Turn on Record requests in Preferences to see traffic here.")
-                    .font(.system(size: 11))
+                    .font(.lfDetail)
                     .foregroundStyle(Theme.tertiaryText)
             } else if entries.isEmpty {
                 Text(status.isRunning ? "No requests yet." : "Start the service to see its requests.")
-                    .font(.system(size: 11))
+                    .font(.lfDetail)
                     .foregroundStyle(Theme.tertiaryText)
             } else {
                 Scrollable(scrolls: scrolls) {
@@ -274,10 +281,10 @@ struct ServiceDetailPane: View {
     @ViewBuilder
     private var logs: some View {
         let text = state.log(for: service)
-        DetailCard(title: "OUTPUT", symbol: "text.alignleft") {
+        DetailCard(title: "Output", symbol: "text.alignleft") {
             if text.isEmpty {
                 Text(status.isRunning ? "No output yet." : "Start the service to see its output.")
-                    .font(.system(size: 11))
+                    .font(.lfDetail)
                     .foregroundStyle(Theme.tertiaryText)
             } else {
                 LogText(text: text, scrolls: scrolls)
@@ -361,7 +368,7 @@ private struct RequestRow: View {
                 .font(.mono(10))
                 .foregroundStyle(Theme.tertiaryText)
                 .frame(width: 58, alignment: .trailing)
-            StatusPill(text: "\(entry.status)", tint: Self.tint(entry.statusClass))
+            TintedBadge(text: String(entry.status), tint: Self.tint(entry.statusClass))
         }
         .padding(.vertical, 3)
     }
@@ -397,7 +404,7 @@ private struct LogText: View {
         }
         .frame(maxHeight: scrolls ? 260 : nil)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.background)
+            RoundedRectangle(cornerRadius: Theme.Metrics.controlRadius, style: .continuous).fill(Theme.background)
         )
     }
 }

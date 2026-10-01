@@ -173,16 +173,17 @@ enum SnapshotRenderer {
     static var requestedPath: String? { request?.path }
 
     static func run(_ request: Request, state: AppState) async {
+        var state = state
+        var selection: UUID?
         #if DEBUG
-        let usesFixture = CommandLine.arguments.contains("--demo")
-        let state = usesFixture ? SnapshotFixture.state() : state
-        #else
-        let usesFixture = false
+        if CommandLine.arguments.contains("--demo") {
+            (state, selection) = SnapshotFixture.state()
+        }
         #endif
         if CommandLine.arguments.contains("--light") { state.appearance.force(.light) }
-        if !usesFixture { await state.load() }
+        if selection == nil { await state.load() }
 
-        let renderer = ImageRenderer(content: content(for: request.surface, state: state))
+        let renderer = ImageRenderer(content: content(for: request.surface, state: state, selection: selection))
         renderer.scale = 2
 
         guard let image = renderer.nsImage,
@@ -207,13 +208,13 @@ enum SnapshotRenderer {
     /// every scrollable surface carries a `scrolls` escape hatch that this path
     /// turns off. `forcesHover` reveals actions that only exist under a pointer.
     @ViewBuilder
-    private static func content(for surface: Surface, state: AppState) -> some View {
+    private static func content(for surface: Surface, state: AppState, selection: UUID?) -> some View {
         switch surface {
         case .popover:
             MenuView(scrolls: false, forcesHover: CommandLine.arguments.contains("--hover"))
                 .environment(state)
         case .dashboard:
-            DashboardContent(scrolls: false)
+            DashboardContent(scrolls: false, initialSelection: selection)
                 .environment(state)
                 .frame(width: Theme.Metrics.dashboardWidth, height: Theme.Metrics.dashboardHeight)
                 .background(Theme.background)

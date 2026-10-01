@@ -45,6 +45,12 @@ struct DashboardContent: View {
     @State private var selection: UUID?
     @State private var isAddingProject = false
 
+    /// `initialSelection` exists for the snapshot, which has no pointer to pick a row with.
+    init(scrolls: Bool = true, initialSelection: UUID? = nil) {
+        self.scrolls = scrolls
+        _selection = State(initialValue: initialSelection)
+    }
+
     var body: some View {
         @Bindable var state = state
 
@@ -74,34 +80,27 @@ struct DashboardContent: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 10) {
-            Text("Localfox")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(Theme.primaryText)
-
-            Spacer(minLength: 16)
-
-            StatusPill(
-                text: "\(state.runningCount) running",
-                tint: state.runningCount > 0 ? Theme.success : nil
-            )
-
+        AppHeader(subtitle: "Local HTTPS domains") {
+            ServiceSummary()
+        } trailing: {
             IconButton(
                 symbol: "plus",
                 help: "Add a project",
-                symbolSize: Theme.Metrics.dashboardSymbolSize,
-                frameSize: Theme.Metrics.dashboardButtonSize
+                symbolSize: Theme.Metrics.headerSymbolSize,
+                frameSize: Theme.Metrics.headerButtonSize,
+                filled: true
             ) { isAddingProject = true }
 
             IconButton(
-                symbol: "gearshape",
+                symbol: "slider.horizontal.3",
                 help: "Preferences",
-                symbolSize: Theme.Metrics.dashboardSymbolSize,
-                frameSize: Theme.Metrics.dashboardButtonSize
+                symbolSize: Theme.Metrics.headerSymbolSize,
+                frameSize: Theme.Metrics.headerButtonSize,
+                filled: true
             ) { state.presentsPreferences = true }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 52)
+        .padding(.horizontal, Theme.Metrics.barPaddingH)
+        .padding(.vertical, Theme.Metrics.barPaddingV)
     }
 
     private var sidebar: some View {
@@ -122,7 +121,7 @@ struct DashboardContent: View {
                 // pass and never draws a ScrollView's content at all, which is
                 // why the snapshot came out empty.
                 Scrollable(scrolls: scrolls) {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 12) {
                         ForEach(state.projects) { project in
                             ProjectSection(
                                 project: project,
@@ -133,31 +132,31 @@ struct DashboardContent: View {
                             )
                         }
                     }
-                    .padding(10)
+                    .padding(Theme.Metrics.rowPaddingH)
                 }
             }
             Spacer(minLength: 0)
             Divider().overlay(Theme.separator)
             HStack {
                 Text("\(state.projects.count) project\(state.projects.count == 1 ? "" : "s")")
-                    .font(.system(size: 11))
+                    .font(.lfDetail)
                     .foregroundStyle(Theme.tertiaryText)
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Theme.Metrics.barPaddingH)
+            .padding(.vertical, Theme.Metrics.barPaddingV)
         }
     }
 
     @ViewBuilder
     private var detail: some View {
         Scrollable(scrolls: scrolls) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 18) {
                 if let error = state.lastError {
                     ErrorBanner(message: error) { state.clearError() }
                 }
-                if let service = selectedService {
-                    ServiceDetailPane(service: service, scrolls: scrolls)
+                if let (project, service) = selected {
+                    ServiceDetailPane(service: service, project: project, scrolls: scrolls)
                 } else {
                     SetupCard()
                     DiagnosticsCard()
@@ -165,15 +164,15 @@ struct DashboardContent: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(16)
+            .padding(Theme.Metrics.detailPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var selectedService: Service? {
+    private var selected: (project: Project, service: Service)? {
         guard let selection else { return nil }
         for project in state.projects {
-            if let service = project.service(id: selection) { return service }
+            if let service = project.service(id: selection) { return (project, service) }
         }
         return nil
     }
@@ -184,22 +183,22 @@ private struct SetupCard: View {
     @Environment(AppState.self) private var state
 
     var body: some View {
-        DetailCard(title: "LOCAL HTTPS", symbol: "lock.shield") {
+        DetailCard(title: "Local HTTPS", symbol: "lock.shield") {
             VStack(alignment: .leading, spacing: 10) {
-                LabeledRow(label: "Helper", value: helperText, tint: helperTint)
+                LabeledRow(label: "Helper", value: helperText, valueFont: .lfDetail, tint: helperTint)
                 CardDivider()
-                LabeledRow(label: "Certificate", value: trustText, tint: trustTint)
+                LabeledRow(label: "Certificate", value: trustText, valueFont: .lfDetail, tint: trustTint)
 
                 if state.needsSetup {
                     Text(explanation)
-                        .font(.system(size: 11))
+                        .font(.lfDetail)
                         .foregroundStyle(Theme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
                     if let blocker = HelperIdentity.registrationBlocker() {
                         CardDivider()
                         Label(blocker.message, systemImage: "exclamationmark.triangle")
-                            .font(.system(size: 11))
+                            .font(.lfDetail)
                             .foregroundStyle(Theme.warning)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -242,7 +241,7 @@ private struct SetupCard: View {
                     }
                 case .startProxy:
                     Text("Start a service to create the certificate authority.")
-                        .font(.system(size: 11))
+                        .font(.lfDetail)
                         .foregroundStyle(Theme.tertiaryText)
                 case .none:
                     EmptyView()
@@ -324,7 +323,7 @@ private struct DiagnosticsCard: View {
     @State private var isExpanded = false
 
     var body: some View {
-        DetailCard(title: "DIAGNOSTICS", symbol: "stethoscope", isExpanded: $isExpanded) {
+        DetailCard(title: "Diagnostics", symbol: "stethoscope", isExpanded: $isExpanded) {
             if let environment = state.shellEnvironment {
                 VStack(alignment: .leading, spacing: 8) {
                     LabeledRow(label: "Shell", value: environment.shell)
@@ -333,14 +332,15 @@ private struct DiagnosticsCard: View {
                 }
             } else {
                 Text("Reading your login shell…")
-                    .font(.system(size: 11))
+                    .font(.lfDetail)
                     .foregroundStyle(Theme.secondaryText)
             }
         }
     }
 }
 
-/// Bordered card with an uppercase title, matching the house style.
+/// A titled group of facts, wearing the same card fill, hairline and radius as
+/// a popover row.
 struct DetailCard<Content: View>: View {
     let title: String
     var symbol: String?
@@ -350,7 +350,7 @@ struct DetailCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if let isExpanded {
                 Button { isExpanded.wrappedValue.toggle() } label: {
                     titleRow(isOpen: isExpanded.wrappedValue)
@@ -361,58 +361,51 @@ struct DetailCard<Content: View>: View {
             }
 
             if isExpanded?.wrappedValue ?? true {
-                cardBody
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.Metrics.cardPaddingH)
+                    .padding(.vertical, Theme.Metrics.cardPaddingV)
+                    .background(CardBackground())
             }
         }
     }
 
     private func titleRow(isOpen: Bool?) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             if let symbol {
-                Image(systemName: symbol).font(.system(size: 9))
+                Image(systemName: symbol).foregroundStyle(Theme.tertiaryText)
             }
-            Text(title).kerning(0.8)
+            Text(title).foregroundStyle(Theme.secondaryText)
             if let isOpen {
                 Image(systemName: isOpen ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.tertiaryText)
             }
             Spacer(minLength: 0)
         }
-        .font(.lfSection)
-        .foregroundStyle(Theme.tertiaryText)
+        .font(.lfDetailStrong)
+        .padding(.leading, 2)
         .contentShape(Rectangle())
-    }
-
-    private var cardBody: some View {
-        content
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-                    .fill(Theme.card)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-                            .strokeBorder(Theme.border, lineWidth: 1)
-                    )
-            )
     }
 }
 
+/// One fact in a `DetailCard`. Monospace by default, since most values are
+/// commands, paths, domains and pids; prose passes `.lfDetail`.
 struct LabeledRow: View {
     let label: String
     let value: String
-    var tint: Color?
+    var valueFont: Font = .lfSubtitle
+    var tint: Color = Theme.primaryText
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(label)
-                .font(.system(size: 11))
+                .font(.lfDetail)
                 .foregroundStyle(Theme.secondaryText)
             Spacer(minLength: 12)
             Text(value)
-                .font(.lfSubtitle)
-                .foregroundStyle(tint ?? Theme.primaryText)
+                .font(valueFont)
+                .foregroundStyle(tint)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
         }

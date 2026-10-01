@@ -106,17 +106,18 @@ struct AddProjectSheet: View {
     private func body(for scan: ProjectScan) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                DetailCard(title: "PROJECT", symbol: "shippingbox") {
+                DetailCard(title: "Project", symbol: "shippingbox") {
                     VStack(alignment: .leading, spacing: 8) {
                         LabelledField(label: "Name", text: $projectName)
                         CardDivider()
                         LabeledRow(
                             label: "Package manager",
-                            value: "\(scan.packageManager.packageManager.displayName)  (\(scan.packageManager.reason))"
+                            value: "\(scan.packageManager.packageManager.displayName)  (\(scan.packageManager.reason))",
+                            valueFont: .lfDetail
                         )
                         if scan.isWorkspace {
                             CardDivider()
-                            LabeledRow(label: "Workspace", value: "yes, \(candidates.count) runnable packages")
+                            LabeledRow(label: "Workspace", value: "Yes, \(candidates.count) runnable packages", valueFont: .lfDetail)
                         }
                     }
                 }
@@ -241,7 +242,7 @@ private struct ServiceEditor: View {
 
     var body: some View {
         DetailCard(
-            title: candidate.isApex ? "SERVICE  ·  MAIN" : "SERVICE",
+            title: candidate.isApex ? "Main service" : "Service",
             symbol: candidate.isSelected ? "checkmark.circle.fill" : "circle"
         ) {
             VStack(alignment: .leading, spacing: 8) {
@@ -254,7 +255,7 @@ private struct ServiceEditor: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.primaryText)
                     Spacer(minLength: 0)
-                    StatusPill(text: candidate.framework.displayName)
+                    TintedBadge(text: candidate.framework.displayName, tint: Theme.secondaryText)
                 }
 
                 if !candidate.evidence.isEmpty {

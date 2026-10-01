@@ -55,10 +55,10 @@ final class AppState {
     }
 
     #if DEBUG
-    /// Snapshot only, in place of `load()`, so a populated popover renders on a
-    /// machine whose helper is not approved and would only draw the setup wall.
-    func adoptFixture(_ projects: [Project], statuses: [UUID: ServiceStatus], tunnels: [UUID: TunnelStatus], trust: RootCAStatus) {
-        (self.projects, self.statuses, self.tunnels, self.trust) = (projects, statuses, tunnels, trust)
+    /// Snapshot only, in place of `load()`, on a machine whose helper may not be approved.
+    func adoptFixture(_ projects: [Project], statuses: [UUID: ServiceStatus], tunnels: [UUID: TunnelStatus], logs: [UUID: String]) {
+        (self.projects, self.statuses, self.tunnels, self.logs) = (projects, statuses, tunnels, logs)
+        trust = .trusted(RootCAIdentity(fingerprint: "00", commonName: "Demo", notBefore: .now, notAfter: .distantFuture), expiresIn: 3e7)
     }
     #endif
 

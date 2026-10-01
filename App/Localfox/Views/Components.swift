@@ -42,26 +42,74 @@ struct IconButton: View {
 /// The popover is too narrow to hold the summary beside the name, so it stacks it.
 struct AppHeader<Summary: View, Trailing: View>: View {
     let subtitle: String
+    var stacksSummary = false
     @ViewBuilder let summary: () -> Summary
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        if stacksSummary {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) { identity; Spacer(); trailing() }
+                summary()
+            }
+        } else {
             HStack(spacing: 10) {
-                AppIconView(size: 34)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(AppInfo.name)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Theme.primaryText)
-                    Text(subtitle)
-                        .font(.lfDetail)
-                        .foregroundStyle(Theme.secondaryText)
-                }
-                .lineLimit(1)
-                Spacer()
+                identity
+                Spacer(minLength: 16)
+                summary().padding(.trailing, 6)
                 trailing()
             }
-            summary()
+        }
+    }
+
+    private var identity: some View {
+        HStack(spacing: 10) {
+            AppIconView(size: 34)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(AppInfo.name)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Theme.primaryText)
+                Text(subtitle)
+                    .font(.lfDetail)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .lineLimit(1)
+        }
+    }
+}
+
+/// Running, stopped, failed and shared, each only when there is one. Counted in
+/// one pass, because the popover and the dashboard header both redraw it on
+/// every status change.
+struct ServiceSummary: View {
+    @Environment(AppState.self) private var state
+
+    var body: some View {
+        var (running, stopped, failed, shared) = (0, 0, 0, 0)
+        for project in state.projects {
+            for service in project.services {
+                switch state.status(of: service) {
+                case .running: running += 1
+                case .stopped: stopped += 1
+                case .failed: failed += 1
+                case .starting, .stopping: break
+                }
+                if state.tunnel(of: service).isLive { shared += 1 }
+            }
+        }
+        return HStack(spacing: 10) {
+            if running > 0 {
+                SummaryCount(count: running, label: "running", dot: Theme.success)
+            }
+            if stopped > 0 {
+                SummaryCount(count: stopped, label: "stopped", dot: Theme.tertiaryText)
+            }
+            if failed > 0 {
+                SummaryCount(count: failed, label: "failed", dot: Theme.danger)
+            }
+            if shared > 0 {
+                SummaryCount(count: shared, label: "shared", dot: Theme.publicShare)
+            }
         }
     }
 }
@@ -166,22 +214,6 @@ struct PortPill: View {
     }
 }
 
-/// A tinted fact, such as a port or a service state.
-struct StatusPill: View {
-    let text: String
-    var tint: Color?
-
-    var body: some View {
-        Text(text)
-            .font(.mono(11, .medium))
-            .foregroundStyle(tint ?? Theme.primaryText)
-            .lineLimit(1)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(ControlBackground(fill: tint?.opacity(0.15) ?? Theme.pill, border: tint?.opacity(0.35) ?? Theme.border))
-    }
-}
-
 /// Primary and secondary button chrome.
 struct ActionButton: View {
     let title: String
@@ -211,19 +243,12 @@ struct ActionButton: View {
 }
 
 extension View {
-    /// The pill an `ActionButton` wears, so anything that has to look like one
+    /// The chrome an `ActionButton` wears, so anything that has to look like one
     /// without being one still changes with it.
     func actionChrome(isPrimary: Bool = false, isHovering: Bool = false) -> some View {
-        padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Metrics.controlRadius, style: .continuous)
-                    .fill(isPrimary ? Theme.accent : (isHovering ? Theme.cardHover : Theme.pill))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Metrics.controlRadius, style: .continuous)
-                            .strokeBorder(isPrimary ? .clear : Theme.border, lineWidth: 1)
-                    )
-            )
+        padding(.horizontal, 11)
+            .frame(height: Theme.Metrics.controlHeight)
+            .background(ControlBackground(fill: isPrimary ? Theme.accent : Theme.card, isHovering: isHovering && !isPrimary))
     }
 }
 
@@ -286,9 +311,8 @@ struct PathList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("PATH")
-                .font(.lfSection)
-                .kerning(0.8)
-                .foregroundStyle(Theme.tertiaryText)
+                .font(.lfDetail)
+                .foregroundStyle(Theme.secondaryText)
             Text(entries.joined(separator: "\n"))
                 .font(.lfSubtitle)
                 .foregroundStyle(Theme.secondaryText)

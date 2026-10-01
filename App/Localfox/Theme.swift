@@ -63,6 +63,13 @@ enum Theme {
         light: successLight.withAlphaComponent(0.55)
     )
 
+    /// Opaque, the accent mixed into `card`, so it can stand in for the card fill.
+    static let selectedRow = dynamic(dark: srgb(0.173, 0.146, 0.209), light: srgb(0.960, 0.933, 0.985))
+    static let selectedBorder = dynamic(
+        dark: accentBrand.withAlphaComponent(0.55),
+        light: accentBrand.withAlphaComponent(0.70)
+    )
+
     /// Path values in the metadata card, so the executable and the working
     /// directory are told apart without reading their labels.
     static let pathExecutable = roleWrapper
@@ -89,12 +96,21 @@ enum Theme {
         static let popoverWidth: CGFloat = 404
         static let maximumListHeight: CGFloat = 460
         static let cardRadius: CGFloat = 10
-        static let rowRadius: CGFloat = 9
         /// Action buttons, pills and the filled header buttons.
         static let controlRadius: CGFloat = 8
+        static let controlHeight: CGFloat = 28
         static let badgeRadius: CGFloat = 5
         static let rowPaddingH: CGFloat = 12
         static let rowPaddingV: CGFloat = 9
+        /// Inside a detail card, a little roomier than a row.
+        static let cardPaddingH: CGFloat = 14
+        static let cardPaddingV: CGFloat = 12
+        /// The dashboard's top bar and sidebar footer.
+        static let barPaddingH: CGFloat = 16
+        static let barPaddingV: CGFloat = 10
+        static let detailPadding: CGFloat = 20
+        static let detailIconTile: CGFloat = 46
+        static let detailIcon: CGFloat = 32
         static let serviceIcon: CGFloat = 22
         /// Beside a service name on the bottom line of a project-first cell.
         static let serviceIconSmall: CGFloat = 13
@@ -113,13 +129,9 @@ enum Theme {
         /// The filled buttons beside the app name in the popover.
         static let headerButtonSize: CGFloat = 30
         static let headerSymbolSize: CGFloat = 13
-        /// The dashboard top bar is 52 points tall, so its buttons can be far larger
-        /// than a 20 point row action without crowding anything.
-        static let dashboardButtonSize: CGFloat = 32
-        static let dashboardSymbolSize: CGFloat = 16
         static let dashboardWidth: CGFloat = 1180
         static let dashboardHeight: CGFloat = 820
-        static let sidebarWidth: CGFloat = 300
+        static let sidebarWidth: CGFloat = 320
     }
 }
 

@@ -22,4 +22,9 @@ extension ServiceStatus {
         case .failed: "Failed"
         }
     }
+
+    /// A word in every state, for a place where the port has its own row.
+    var title: String {
+        isRunning ? "Running" : label
+    }
 }
