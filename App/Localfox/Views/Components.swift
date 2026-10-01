@@ -1,3 +1,4 @@
+import AppKit
 import LocalfoxKit
 import SwiftUI
 
@@ -376,4 +377,27 @@ struct LabelledField: View {
             TextField("", text: $text)
         }
     }
+}
+
+/// A native menu at the pointer. SwiftUI's `Menu` draws a prohibition glyph under
+/// `ImageRenderer`, which would break the snapshot review of any bar that hosts one.
+@MainActor
+func popUpMenu(_ items: [(title: String, action: () -> Void)]) {
+    let menu = NSMenu()
+    var targets: [MenuActionTarget] = []
+    for item in items {
+        let target = MenuActionTarget(item.action)
+        targets.append(target)
+        let menuItem = NSMenuItem(title: item.title, action: #selector(MenuActionTarget.fire), keyEquivalent: "")
+        menuItem.target = target
+        menuItem.representedObject = target
+        menu.addItem(menuItem)
+    }
+    menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+}
+
+private final class MenuActionTarget: NSObject {
+    private let action: () -> Void
+    init(_ action: @escaping () -> Void) { self.action = action }
+    @objc func fire() { action() }
 }

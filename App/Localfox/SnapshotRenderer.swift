@@ -7,13 +7,14 @@ import SwiftUI
 /// Screen Recording permission and without hand-driving the menu bar.
 ///
 /// Usage: `Localfox --snapshot out.png [--hover] [--light] [--demo]`, `--snapshot-dashboard out.png`
-/// or `--snapshot-prefs out.png`.
+/// or `--snapshot-prefs out.png` or `--snapshot-add-route out.png`.
 @MainActor
 enum SnapshotRenderer {
     enum Surface: String, CaseIterable {
         case popover = "--snapshot"
         case dashboard = "--snapshot-dashboard"
         case preferences = "--snapshot-prefs"
+        case addRoute = "--snapshot-add-route"
     }
 
     /// Drives the app's own runtime headlessly and prints what happened.
@@ -221,6 +222,9 @@ enum SnapshotRenderer {
                 .themedSurface(state.appearance.colorScheme)
         case .preferences:
             PreferencesSheet(scrolls: false)
+                .environment(state)
+        case .addRoute:
+            AddRouteSheet(scrolls: false, name: "metabase", domain: "metabase.localhost", port: "3300")
                 .environment(state)
         }
     }

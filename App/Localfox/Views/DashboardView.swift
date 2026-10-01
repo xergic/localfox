@@ -87,21 +87,18 @@ struct DashboardContent: View {
         AppHeader(subtitle: "Local HTTPS domains") {
             ServiceSummary()
         } trailing: {
-            Menu {
-                Button("Add Project…") { isAddingProject = true }
-                Button("Route a Port…") { isAddingRoute = true }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: Theme.Metrics.headerSymbolSize, weight: .medium))
-                    .foregroundStyle(Theme.secondaryText)
-                    .frame(width: Theme.Metrics.headerButtonSize, height: Theme.Metrics.headerButtonSize)
-                    .background(ControlBackground())
-                    .contentShape(Rectangle())
+            IconButton(
+                symbol: "plus",
+                help: "Add a project or route a port",
+                symbolSize: Theme.Metrics.headerSymbolSize,
+                frameSize: Theme.Metrics.headerButtonSize,
+                filled: true
+            ) {
+                popUpMenu([
+                    ("Add Project…", { isAddingProject = true }),
+                    ("Route a Port…", { isAddingRoute = true }),
+                ])
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Add a project or route a port")
 
             IconButton(
                 symbol: "slider.horizontal.3",

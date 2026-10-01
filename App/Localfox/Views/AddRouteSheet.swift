@@ -2,16 +2,24 @@ import AppKit
 import LocalfoxKit
 import SwiftUI
 
-/// Points a `.localhost` domain at a loopback port Localfox does not start.
 struct AddRouteSheet: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
 
-    @State private var name = ""
-    @State private var domain = ""
-    @State private var port = ""
+    var scrolls = true
+    @State private var name: String
+    @State private var domain: String
+    @State private var port: String
     @State private var directory: URL?
     @State private var domainWasEdited = false
+
+    /// The prefill exists for the snapshot, which has no keyboard to type with.
+    init(scrolls: Bool = true, name: String = "", domain: String = "", port: String = "") {
+        self.scrolls = scrolls
+        _name = State(initialValue: name)
+        _domain = State(initialValue: domain)
+        _port = State(initialValue: port)
+    }
 
     private var parsedPort: Int? { Int(port.trimmingCharacters(in: .whitespaces)) }
 
@@ -45,7 +53,7 @@ struct AddRouteSheet: View {
         VStack(spacing: 0) {
             header
             Divider().overlay(Theme.separator)
-            ScrollView {
+            Scrollable(scrolls: scrolls) {
                 VStack(alignment: .leading, spacing: 14) {
                     DetailCard(title: "Route", symbol: "arrow.left.arrow.right") {
                         VStack(alignment: .leading, spacing: 8) {
