@@ -44,6 +44,7 @@ struct DashboardContent: View {
     var scrolls = true
     @State private var selection: UUID?
     @State private var isAddingProject = false
+    @State private var isAddingRoute = false
 
     /// `initialSelection` exists for the snapshot, which has no pointer to pick a row with.
     init(scrolls: Bool = true, initialSelection: UUID? = nil) {
@@ -67,6 +68,9 @@ struct DashboardContent: View {
         .sheet(isPresented: $isAddingProject) {
             AddProjectSheet().environment(state)
         }
+        .sheet(isPresented: $isAddingRoute) {
+            AddRouteSheet().environment(state)
+        }
         .sheet(isPresented: $state.presentsPreferences) {
             PreferencesSheet().environment(state)
         }
@@ -83,13 +87,21 @@ struct DashboardContent: View {
         AppHeader(subtitle: "Local HTTPS domains") {
             ServiceSummary()
         } trailing: {
-            IconButton(
-                symbol: "plus",
-                help: "Add a project",
-                symbolSize: Theme.Metrics.headerSymbolSize,
-                frameSize: Theme.Metrics.headerButtonSize,
-                filled: true
-            ) { isAddingProject = true }
+            Menu {
+                Button("Add Project…") { isAddingProject = true }
+                Button("Route a Port…") { isAddingRoute = true }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: Theme.Metrics.headerSymbolSize, weight: .medium))
+                    .foregroundStyle(Theme.secondaryText)
+                    .frame(width: Theme.Metrics.headerButtonSize, height: Theme.Metrics.headerButtonSize)
+                    .background(ControlBackground())
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Add a project or route a port")
 
             IconButton(
                 symbol: "slider.horizontal.3",
@@ -114,6 +126,9 @@ struct DashboardContent: View {
                     )
                     ActionButton(title: "Add Project", symbol: "plus", isPrimary: true) {
                         isAddingProject = true
+                    }
+                    ActionButton(title: "Route a Port", symbol: "arrow.left.arrow.right") {
+                        isAddingRoute = true
                     }
                 }
             } else {
