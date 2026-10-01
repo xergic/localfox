@@ -19,6 +19,7 @@ extension AppState {
     /// bound it, and a tunnel to a port nothing is listening on serves 502s
     /// under a URL the user has already sent to somebody.
     func share(_ service: Service) async {
+        guard service.kind == .command else { return }
         guard case let .running(_, port) = status(of: service) else { return }
         await share(service, plan: .quick(port: port, rewritesHost: preferences.rewritesHostHeader))
     }
@@ -30,6 +31,7 @@ extension AppState {
     /// written down there; under Auto the dev server can bind a different one
     /// and the share would point at whatever last held it.
     func shareNamed(_ service: Service) async {
+        guard service.kind == .command else { return }
         guard let hostname = tunnelTargets.hostname(for: service.id),
               let token = tunnelTargets.token(for: service.id) else {
             report(SharingWarning.namedTunnelUnconfigured(service))
@@ -48,6 +50,7 @@ extension AppState {
     /// from the port Localfox just discovered rather than from anything written
     /// down elsewhere.
     func shareSSH(_ service: Service) async {
+        guard service.kind == .command else { return }
         guard let target = tunnelTargets.ssh(for: service.id) else {
             report(SharingWarning.sshTunnelUnconfigured(service))
             return

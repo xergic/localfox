@@ -48,6 +48,8 @@ final class AppState {
     /// Not private only because the sharing half of `AppState` lives in
     /// `AppState+Sharing.swift`. Nothing outside this type touches it.
     var tunnelRuntime: TunnelRuntime?
+    /// Not private for the same reason as `tunnelRuntime`: `AppState+Routes.swift`.
+    var routeWatcher: PortRouteWatcher?
 
     init(store: ProjectStore = ProjectStore(), helperClient: HelperClient = HelperClient()) {
         self.store = store
@@ -77,6 +79,7 @@ final class AppState {
         }
 
         await refreshSetup()
+        await syncProxy()
 
         // Off the main actor's critical path: a broken rc file can make this
         // take the full timeout, and the project list should draw regardless.
@@ -290,13 +293,21 @@ final class AppState {
                 Task { @MainActor in self?.setTunnelStatus(status, for: id) }
             }
         )
+        startRouteWatcher()
     }
 
     // MARK: - Running services
 
     func start(_ service: Service) async {
-        guard let runtime, let project = project(owning: service.id) else { return }
-        await runtime.start(service, projectName: project.name)
+        guard let project = project(owning: service.id) else { return }
+        switch service.kind {
+        case .command:
+            guard let runtime else { return }
+            await runtime.start(service, projectName: project.name)
+        case .portRoute:
+            guard let routeWatcher, let port = service.portMode.fixedValue else { return }
+            await routeWatcher.start(id: service.id, port: port)
+        }
         Telemetry.send(.serviceStarted)
     }
 
@@ -308,13 +319,21 @@ final class AppState {
     /// grace period, serving 502s under a URL somebody already has.
     func stop(_ service: Service) async {
         await unshare(service)
-        await runtime?.stop(service)
+        switch service.kind {
+        case .command: await runtime?.stop(service)
+        case .portRoute: await routeWatcher?.stop(id: service.id)
+        }
     }
 
     /// Same ordering as `stop`, and for a second reason: under Auto the new
     /// process can bind a different port, so a tunnel carried across a restart
     /// would point at the old one.
     func restart(_ service: Service) async {
+        if service.kind == .portRoute {
+            await stop(service)
+            await start(service)
+            return
+        }
         guard let runtime, let project = project(owning: service.id) else { return }
         await unshare(service)
         await runtime.restart(service, projectName: project.name)
@@ -344,7 +363,9 @@ final class AppState {
     /// the process exits.
     func stopEverything() async {
         await tunnelRuntime?.stopAll()
+        await routeWatcher?.stopAll()
         await runtime?.stopAll()
+        await clearProxy()
     }
 
     func log(for service: Service) -> String {
@@ -404,47 +425,21 @@ final class AppState {
         await stopAll(project)
         save(projects.filter { $0.id != projectID })
         Telemetry.send(.projectRemoved)
-        for service in project.services {
-            assign(\.statuses[service.id], nil)
-            assign(\.logs[service.id], nil)
-            assign(\.tunnels[service.id], nil)
-            assign(\.requests[service.id], nil)
-            tunnelTargets.remove(for: service.id)
-        }
+        project.services.forEach(forget)
         await syncProxy()
+    }
+
+    /// Drops everything held for a service that no longer exists.
+    func forget(_ service: Service) {
+        assign(\.statuses[service.id], nil)
+        assign(\.logs[service.id], nil)
+        assign(\.tunnels[service.id], nil)
+        assign(\.requests[service.id], nil)
+        tunnelTargets.remove(for: service.id)
     }
 
     func replace(_ project: Project) {
         save(projects.map { $0.id == project.id ? project : $0 })
-    }
-
-    /// Applies an edited project and reports which running services now hold a
-    /// domain their process does not know about.
-    ///
-    /// The proxy is synced before anything restarts, so the route table already
-    /// carries the new host by the time a process comes back and confirms over it.
-    @discardableResult
-    func apply(_ edited: Project) async -> [Service] {
-        let previous = projects.first { $0.id == edited.id }
-        let moved = edited.services.filter { service in
-            previous?.service(id: service.id)?.domain != service.domain
-                && status(of: service).isRunning
-        }
-        replace(edited)
-        await refreshDetectedIcons()
-        await syncProxy()
-        return moved
-    }
-
-    /// `LOCALFOX_URL` and `LOCALFOX_HOST` are injected at spawn, so a running
-    /// service cannot pick up a new domain without being restarted. Reads the
-    /// service back from the store first: restarting the stale value would
-    /// re-inject the old host, which is the whole bug.
-    func restartForNewDomain(_ services: [Service]) async {
-        for service in services {
-            guard let current = projects.compactMap({ $0.service(id: service.id) }).first else { continue }
-            await restart(current)
-        }
     }
 
     func setIcon(_ path: String?, for project: Project) async {
@@ -478,7 +473,7 @@ final class AppState {
     /// Awaited rather than fired and forgotten: every caller is already async,
     /// and letting it land late makes the icon visibly pop in after the list has
     /// already drawn.
-    private func refreshDetectedIcons() async {
+    func refreshDetectedIcons() async {
         let inputs = projects.compactMap { item in item.directory.map { (id: item.id, directory: $0) } }
         let resolved = await Task.detached {
             let resolver = IconResolver()
@@ -564,7 +559,7 @@ final class AppState {
             Task { await self.tunnelRuntime?.stop(serviceID) }
         }
         // A newly discovered port is only useful once the proxy knows it.
-        if status.isRunning || status == .stopped {
+        if status.isRunning || wasRunning || status == .stopped {
             Task { await self.syncProxy() }
         }
     }
