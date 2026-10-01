@@ -359,8 +359,9 @@ screen to stop it. `clearProxy()` is awaited because the app exits right after i
 **Routes are not shareable yet.** Tunnel teardown keys on the origin process group, which a
 route does not have.
 
-**Store version 2.** Bumping the version is what stops a 1.x build reading a route as an
-empty command. `ProjectStore` refuses to save after a failed load, so a refused file is
+**Store version 2.** `save` writes 2 only when a service is a port route or a directory is
+nil, and 1 otherwise, because a file without those is valid for 1.x. The version is what
+stops a 1.x build reading a route as an empty command. `ProjectStore` refuses to save after a failed load, so a refused file is
 never overwritten. That guard protects only builds from this version on, because shipped
 1.2.0 lacks it and overwrites a file it failed to load.
 

@@ -150,9 +150,9 @@ will show as waiting. Bind it to `127.0.0.1` too.
 Quitting Localfox clears every route from the proxy, even though the servers behind them
 keep running. A route cannot be shared publicly yet.
 
-Routes need a newer configuration format. Localfox 1.2.0 cannot read a configuration saved
-by this version and may overwrite it, so do not open it with 1.2.0. Builds from this
-version on leave an unreadable file alone.
+The configuration becomes a newer format once it holds a port route, or a service with no
+folder. Localfox 1.2.0 cannot read that file and may overwrite it, so do not open it with
+1.2.0. Builds from this version on leave an unreadable file alone.
 
 ## Requests
 

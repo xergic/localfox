@@ -48,8 +48,52 @@ struct ProjectStoreTests {
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
         try await ProjectStore(url: url).save([])
+        #expect(try writtenVersion(url) == 1)
+    }
+
+    private func writtenVersion(_ url: URL) throws -> Int? {
         let json = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
-        #expect(json?["version"] as? Int == StoreDocument.currentVersion)
+        return json?["version"] as? Int
+    }
+
+    @Test("a file of commands stays readable by 1.2.0")
+    func commandsWriteVersionOne() async throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let project = Project(
+            name: "Wishfox",
+            directory: URL(fileURLWithPath: "/Users/me/wishfox"),
+            services: [service("Web", domain: "wishfox.localhost")]
+        )
+        try await ProjectStore(url: url).save([project])
+        #expect(try writtenVersion(url) == 1)
+    }
+
+    @Test("a port route makes the file version 2")
+    func routeWritesVersionTwo() async throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let route = try #require(Service.portRoute(
+            name: "Docker", domain: LocalDomain("docker.localhost")!, port: 8081,
+            directory: URL(fileURLWithPath: "/Users/me/wishfox")
+        ))
+        let project = Project(
+            name: "Wishfox", directory: URL(fileURLWithPath: "/Users/me/wishfox"), services: [route]
+        )
+        try await ProjectStore(url: url).save([project])
+        #expect(try writtenVersion(url) == 2)
+    }
+
+    @Test("a project with no folder makes the file version 2")
+    func nilDirectoryWritesVersionTwo() async throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let project = Project(name: "Loose", directory: nil, services: [service("Web", domain: "loose.localhost")])
+        try await ProjectStore(url: url).save([project])
+        #expect(try writtenVersion(url) == 2)
     }
 
     @Test("a project icon round-trips")

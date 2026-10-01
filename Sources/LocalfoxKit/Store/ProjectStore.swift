@@ -5,9 +5,18 @@ import Foundation
 /// Versioned from the first release. A store that starts unversioned can never
 /// be migrated without guessing, and this file outlives every build that wrote it.
 public struct StoreDocument: Codable, Sendable, Equatable {
-    /// 2 added ServiceKind and optional directories. A 1.x build reading a route
-    /// would treat it as a command with an empty command line, so the bump is what stops it.
+    /// The highest version this build reads. 2 added ServiceKind and optional directories.
+    /// A 1.x build reading a route would treat it as a command with an empty command line,
+    /// so a file is written as 2 only when it holds one, and as 1 otherwise.
     public static let currentVersion = 2
+
+    static func requiredVersion(for projects: [Project]) -> Int {
+        let needsVersion2 = projects.contains { project in
+            project.directory == nil
+                || project.services.contains { $0.kind == .portRoute || $0.directory == nil }
+        }
+        return needsVersion2 ? 2 : 1
+    }
 
     public var version: Int
     public var projects: [Project]
@@ -119,7 +128,7 @@ public actor ProjectStore {
         guard !loadFailed else { throw StoreError.refusingToOverwrite(path: url.path) }
         try Self.assertDomainsAreUnique(in: projects)
         document.projects = projects
-        document.version = StoreDocument.currentVersion
+        document.version = StoreDocument.requiredVersion(for: projects)
         try write()
     }
 
