@@ -240,6 +240,11 @@ inside that callback, where the notification has already fired, which is why
 brand fill; `accentText` is the accent as a glyph, darkened in light because the
 brand colour scores about 2:1 on white.
 
+**A native control stands in for anything SwiftUI draws as a placeholder.** `Menu` renders
+as a broken box under `ImageRenderer`, and `make snapshot` is the design review path. The
+dashboard "+" is an `IconButton` that pops an `NSMenu`. `TextField` also renders as its
+placeholder there, which is why `snapshots/add-route-demo.png` shows empty fields.
+
 ## Sharing
 
 Public sharing has three modes, all driven by `TunnelRuntime` from a single `TunnelPlan`.
@@ -248,7 +253,7 @@ forward to a machine the user owns. This is the only part of Localfox that reach
 loopback, so every rule here exists to keep it bounded.
 
 **A tunnel is never persisted.** No field on `Service`, nothing in `projects.json`, so the
-store stays version 1. A share that came back after a relaunch would be a public URL
+store needs no field for it. A share that came back after a relaunch would be a public URL
 nobody remembers opening, which is the one failure this feature cannot have.
 
 **A tunnel never outlives its port.** `AppState.setStatus` tears it down the moment a
@@ -325,6 +330,41 @@ the server's own loopback and reports no error anywhere.
 loopback and has to keep refusing it, because that guard is what stops a dev server walking
 the app off the machine with a redirect. The probe for a share only ever uses an address the
 user typed and follows no redirects.
+
+## Port routes
+
+A port route is a `Service` of kind `.portRoute`. It has a domain and a fixed port and no
+command. `PortRouteWatcher` follows its port and `AppState+Routes.swift` holds the
+lifecycle, which also keeps `AppState.swift` under SwiftLint's 600-line `file_length`
+warning.
+
+**A route is watched, not owned.** It has no process group, so no signal ever goes to
+whatever holds its port.
+
+**Waiting has no route.** A route to a closed port serves 502 under a domain that looks
+configured. `syncProxy` takes a port from the status, and `.waiting` carries none.
+
+**The probe dials `127.0.0.1` because Caddy does.** A `::1`-only server is reported as
+Waiting on purpose. Probing both would show Running for a route that answers 502.
+
+**Status events travel on one ordered `AsyncStream`.** `PortRouteWatcher.events` feeds a
+single consumer loop in `AppState+Routes.swift`. A callback per event was rejected, because
+separate main-actor tasks can land `.running` after `.stopped`, and that order decides
+whether a route exists.
+
+**Quitting awaits an empty route table, and launch syncs the table once.** A route's server
+outlives Localfox, so a route left in Caddy would keep serving a domain with nothing on
+screen to stop it. `clearProxy()` is awaited because the app exits right after it.
+
+**Routes are not shareable yet.** Tunnel teardown keys on the origin process group, which a
+route does not have.
+
+**Store version 2.** Bumping the version is what stops a 1.x build reading a route as an
+empty command. `ProjectStore` refuses to save after a failed load, so a refused file is
+never overwritten.
+
+**Routes draw `arrow.left.arrow.right`, and the header counts waiting separately.** A
+waiting route is not running and not failed, so folding it into either count misleads.
 
 ## Requests
 

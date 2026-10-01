@@ -130,6 +130,32 @@ and builds the config itself, so a non-loopback upstream is not expressible acro
 boundary rather than merely rejected. Every connecting client is checked against a code
 signing requirement pinned to the bundle ID and Team ID.
 
+## Port routes
+
+A port route gives a domain to something Localfox did not start. A Docker container, a
+database admin page or an SSH forward all work. Use **Route a Port** from the **+** button
+in the dashboard, or add one when you edit a project.
+
+A route has a domain and a fixed port, and no command. **Start** begins watching the port.
+**Stop** stops watching it and removes the domain. Localfox never signals the process that
+holds the port, because it did not start it.
+
+While the port accepts connections, the route shows as running and the domain serves it.
+While it does not, the route shows as waiting and the domain is not served. Localfox checks
+every two seconds.
+
+The check dials `127.0.0.1`, because the proxy does. A server that listens on `::1` only
+will show as waiting. Bind it to `127.0.0.1` too.
+
+Quitting Localfox clears every route from the proxy, even though the servers behind them
+keep running.
+
+A route cannot be shared publicly yet.
+
+Routes need a newer configuration format. Localfox 1.2.0 cannot open a configuration saved
+by this version. It refuses the file and leaves it alone, so update before you go back and
+forth.
+
 ## Requests
 
 Localfox can record what the proxy handled. Turn on **Record requests** in Preferences and

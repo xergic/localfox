@@ -2,6 +2,21 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Port routes. Give a domain to a port Localfox did not start, such as a Docker container or an SSH forward. Add one with **Route a Port** in the dashboard, or when editing a project.
+- A route shows as waiting while its port is closed, and is served only while the port accepts connections.
+- The header summary shows a count of waiting routes.
+
+### Changed
+- The configuration format is version 2. Localfox 1.2.0 cannot open a configuration saved by this version.
+- Quitting clears every route from the proxy, since a route's server keeps running.
+- The dashboard **+** button opens a menu to add a project or route a port.
+
+### Fixed
+- The configuration store no longer saves over a file it could not load.
+
 ## [1.2.0] - 2026-10-01
 
 ### Changed
