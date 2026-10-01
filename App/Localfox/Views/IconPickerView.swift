@@ -6,7 +6,7 @@ import SwiftUI
 /// represents it. Anything outside the project is reachable through Choose File.
 struct IconPickerView: View {
     let projectName: String
-    let projectDirectory: URL
+    let projectDirectory: URL?
     let assets: [ProjectAsset]
     let currentPath: String?
     let onPick: (String?) -> Void

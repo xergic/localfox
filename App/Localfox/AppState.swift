@@ -469,7 +469,7 @@ final class AppState {
     }
 
     func projectAssets(for project: Project) -> [ProjectAsset] {
-        ProjectAssetScanner().assets(root: project.directory, serviceDirectory: project.directory)
+        project.directory.map { ProjectAssetScanner().assets(root: $0, serviceDirectory: $0) } ?? []
     }
 
     /// Resolved off the main actor and written as one map, so a draw never
@@ -479,7 +479,7 @@ final class AppState {
     /// and letting it land late makes the icon visibly pop in after the list has
     /// already drawn.
     private func refreshDetectedIcons() async {
-        let inputs = projects.map { (id: $0.id, directory: $0.directory) }
+        let inputs = projects.compactMap { item in item.directory.map { (id: item.id, directory: $0) } }
         let resolved = await Task.detached {
             let resolver = IconResolver()
             return inputs.reduce(into: [UUID: String]()) { found, project in

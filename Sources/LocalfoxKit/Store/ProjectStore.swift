@@ -5,7 +5,9 @@ import Foundation
 /// Versioned from the first release. A store that starts unversioned can never
 /// be migrated without guessing, and this file outlives every build that wrote it.
 public struct StoreDocument: Codable, Sendable, Equatable {
-    public static let currentVersion = 1
+    /// 2 added ServiceKind and optional directories. A 1.x build reading a route
+    /// would treat it as a command with an empty command line, so the bump is what stops it.
+    public static let currentVersion = 2
 
     public var version: Int
     public var projects: [Project]

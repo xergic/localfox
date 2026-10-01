@@ -41,7 +41,7 @@ struct ServiceDetailPane: View {
                         CardDivider()
                         LabeledRow(label: "Command", value: service.command)
                         CardDivider()
-                        LabeledRow(label: "Directory", value: service.directory.path)
+                        LabeledRow(label: "Directory", value: service.directory?.path ?? "None")
                         CardDivider()
                         LabeledRow(label: "Port", value: portDescription, valueFont: .lfDetail)
                     }
@@ -52,8 +52,10 @@ struct ServiceDetailPane: View {
                         CardDivider()
                         LabeledRow(label: "Domain", value: service.domain.value)
                         if case let .running(pid, port) = status {
-                            CardDivider()
-                            LabeledRow(label: "PID", value: String(pid))
+                            if let pid {
+                                CardDivider()
+                                LabeledRow(label: "PID", value: String(pid))
+                            }
                             CardDivider()
                             LabeledRow(label: "Proxying", value: "127.0.0.1:\(port)")
                         }

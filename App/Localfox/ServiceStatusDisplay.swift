@@ -10,6 +10,7 @@ extension ServiceStatus {
         case .starting, .stopping: Theme.accentText
         case .failed: Theme.danger
         case .stopped: Theme.secondaryText
+        case .waiting: Theme.accentText
         }
     }
 
@@ -19,6 +20,7 @@ extension ServiceStatus {
         case .starting: "Starting"
         case let .running(_, port): ":\(port)"
         case .stopping: "Stopping"
+        case .waiting: "Waiting"
         case .failed: "Failed"
         }
     }

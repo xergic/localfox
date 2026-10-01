@@ -57,7 +57,7 @@ extension AppState {
     }
 
     private func share(_ service: Service, plan: TunnelPlan) async {
-        guard let tunnelRuntime, case let .running(pid, _) = status(of: service) else { return }
+        guard let tunnelRuntime, case let .running(pid?, _) = status(of: service) else { return }
         Telemetry.send(.shareStarted(.init(plan)))
         await tunnelRuntime.start(
             serviceID: service.id,

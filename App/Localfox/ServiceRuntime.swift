@@ -57,8 +57,16 @@ actor ServiceRuntime {
             for (key, value) in pinned.environment { environment[key] = value }
         }
 
+        guard let directory = service.directory else {
+            onStatus(service.id, .failed(.init(
+                reason: .spawnFailed(errno: ENOENT),
+                output: "This service has no directory to run in."
+            )))
+            return
+        }
+
         let request = SpawnRequest.devCommand(
-            command, in: service.directory, shell: shell.shell, environment: environment
+            command, in: directory, shell: shell.shell, environment: environment
         )
 
         let process: SpawnedProcess

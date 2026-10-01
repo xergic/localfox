@@ -203,12 +203,12 @@ struct ProjectSection: View {
                 // room for four buttons the way `ServiceRow` does leaves a 300pt
                 // sidebar rendering `~/Work/Wishfox/wishfox-api` as `…i`, and the
                 // path is worth more at rest than under the pointer.
-                Text(project.displayPath)
+                Text(project.displayPath ?? "")
                     .font(.lfSubtitle)
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.head)
-                    .help(project.displayPath)
+                    .help(project.displayPath ?? "")
                     .opacity(showsActions ? 0 : 1)
                 Spacer(minLength: 0)
             }
@@ -257,8 +257,10 @@ struct ProjectSection: View {
                     Task { await state.startAll(project) }
                 }
             }
-            IconButton(symbol: "folder", help: "Reveal in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([project.directory])
+            if let directory = project.directory {
+                IconButton(symbol: "folder", help: "Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([directory])
+                }
             }
             if showsEdit {
                 IconButton(symbol: "pencil", help: "Edit project") { isEditing = true }
@@ -354,8 +356,10 @@ struct ServiceRow: View {
                             if let url = state.url(for: service) { NSWorkspace.shared.open(url) }
                         }
                     }
-                    IconButton(symbol: "folder", help: "Reveal in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([service.directory])
+                    if let directory = service.directory {
+                        IconButton(symbol: "folder", help: "Reveal in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([directory])
+                        }
                     }
                 }
                 .padding(3)
@@ -415,17 +419,19 @@ struct ServiceRow: View {
             }
         }
         shareItems
-        Button("Reveal in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([service.directory])
-        }
-        Button("Open in Terminal") {
-            // `open -a` rather than AppleScript, which would need the automation
-            // entitlement and a TCC prompt for a one-line action.
-            NSWorkspace.shared.open(
-                [service.directory],
-                withApplicationAt: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"),
-                configuration: NSWorkspace.OpenConfiguration()
-            )
+        if let directory = service.directory {
+            Button("Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([directory])
+            }
+            Button("Open in Terminal") {
+                // `open -a` rather than AppleScript, which would need the automation
+                // entitlement and a TCC prompt for a one-line action.
+                NSWorkspace.shared.open(
+                    [directory],
+                    withApplicationAt: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"),
+                    configuration: NSWorkspace.OpenConfiguration()
+                )
+            }
         }
         Divider()
         Text(service.command)

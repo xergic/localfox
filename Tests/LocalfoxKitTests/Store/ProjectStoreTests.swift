@@ -205,4 +205,14 @@ struct ProjectStoreTests {
         await #expect(throws: StoreError.refusingToOverwrite(path: url.path)) { try await store.save([]) }
         #expect(try Data(contentsOf: url) == original)
     }
+
+    @Test("a standalone route with no directory round-trips")
+    func routeRoundTrips() async throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let route = try #require(Service.portRoute(name: "Docker", domain: LocalDomain("docker.localhost")!, port: 8081, directory: nil))
+        let project = Project(name: "Docker", directory: nil, services: [route])
+        try await ProjectStore(url: url).save([project])
+        #expect(try await ProjectStore(url: url).load() == [project])
+    }
 }

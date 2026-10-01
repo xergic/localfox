@@ -119,7 +119,7 @@ struct EditProjectSheet: View {
         var name: String
         var command: String
         var domain: String
-        let directory: URL
+        let directory: URL?
         let framework: ServiceType
         /// The public hostname of a named Cloudflare tunnel, or blank for none.
         var namedHostname = ""
@@ -211,7 +211,7 @@ struct EditProjectSheet: View {
                 Text("Edit project")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.primaryText)
-                Text(project.displayPath)
+                Text(project.displayPath ?? "")
                     .font(.lfSubtitle)
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
@@ -230,7 +230,7 @@ struct EditProjectSheet: View {
                 LabelledField(label: "Name", text: $projectName)
                     .onChange(of: projectName) { old, new in suggestDomains(from: old, to: new) }
                 CardDivider()
-                LabeledRow(label: "Directory", value: project.displayPath)
+                LabeledRow(label: "Directory", value: project.displayPath ?? "None")
             }
         }
     }
@@ -271,7 +271,7 @@ struct EditProjectSheet: View {
         let newSlug = LocalDomain.slug(new)
         guard oldSlug != newSlug, !newSlug.isEmpty else { return }
 
-        let names = rows.map(\.directory.lastPathComponent)
+        let names = rows.map { $0.directory?.lastPathComponent ?? $0.name }
         let apexIndex = rows.firstIndex { $0.originalDomain == "\(LocalDomain.slug(project.name)).localhost" }
         let generated = ProjectDomains.hosts(directoryNames: names, projectSlug: oldSlug, apexIndex: apexIndex)
         let suggested = ProjectDomains.hosts(directoryNames: names, projectSlug: newSlug, apexIndex: apexIndex)

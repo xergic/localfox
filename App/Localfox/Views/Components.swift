@@ -90,7 +90,7 @@ struct ServiceSummary: View {
             for service in project.services {
                 switch state.status(of: service) {
                 case .running: running += 1
-                case .stopped: stopped += 1
+                case .stopped, .waiting: stopped += 1
                 case .failed: failed += 1
                 case .starting, .stopping: break
                 }

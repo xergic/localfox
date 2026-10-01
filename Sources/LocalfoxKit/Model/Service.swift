@@ -8,8 +8,13 @@ import Foundation
 public enum ServiceStatus: Hashable, Sendable {
     case stopped
     case starting
-    case running(pid: pid_t, port: Int)
+    /// `pid` is nil for a port route, whose listener Localfox does not own.
+    case running(pid: pid_t?, port: Int)
     case stopping
+    /// A port route whose port is closed. Active, because the user started it
+    /// and Stop must stay reachable, but routeless: a route to a closed port
+    /// serves 502s under a domain that looks configured.
+    case waiting(port: Int)
     case failed(Failure)
 
     public struct Failure: Hashable, Sendable {
@@ -37,12 +42,19 @@ public enum ServiceStatus: Hashable, Sendable {
         return false
     }
 
+    public var isActive: Bool {
+        switch self {
+        case .running, .waiting: true
+        case .stopped, .starting, .stopping, .failed: false
+        }
+    }
+
     /// True while the user is waiting on something, which is what the UI
     /// disables interaction on.
     public var isTransitioning: Bool {
         switch self {
         case .starting, .stopping: true
-        case .stopped, .running, .failed: false
+        case .stopped, .running, .waiting, .failed: false
         }
     }
 
@@ -50,6 +62,15 @@ public enum ServiceStatus: Hashable, Sendable {
         if case let .running(_, port) = self { return port }
         return nil
     }
+}
+
+/// Whether Localfox runs the server or only routes to it.
+public enum ServiceKind: String, Hashable, Codable, Sendable {
+    /// Localfox spawns `command` and discovers the port it binds.
+    case command
+    /// Something else serves `portMode`'s fixed port. Localfox only watches
+    /// it and routes the domain while it accepts connections.
+    case portRoute
 }
 
 /// How a framework accepts a fixed port.
@@ -89,7 +110,8 @@ public struct Service: Identifiable, Hashable, Codable, Sendable {
     public var name: String
     /// Absolute. For a monorepo member this is the package directory, not the
     /// repository root, so per-directory version managers resolve correctly.
-    public var directory: URL
+    /// nil for a port route that belongs to no directory.
+    public var directory: URL?
     public var framework: ServiceType
     public var command: String
     public var domain: LocalDomain
@@ -101,18 +123,20 @@ public struct Service: Identifiable, Hashable, Codable, Sendable {
     /// Service-specific overrides, merged last. Never written to the project's
     /// own .env files.
     public var environment: [String: String]
+    public var kind: ServiceKind
 
     public init(
         id: UUID = UUID(),
         name: String,
-        directory: URL,
+        directory: URL?,
         framework: ServiceType,
         command: String,
         domain: LocalDomain,
         portMode: PortMode = .auto,
         expectedPort: Int? = nil,
         portFlagStyle: PortFlagStyle = .none,
-        environment: [String: String] = [:]
+        environment: [String: String] = [:],
+        kind: ServiceKind = .command
     ) {
         self.id = id
         self.name = name
@@ -124,6 +148,42 @@ public struct Service: Identifiable, Hashable, Codable, Sendable {
         self.expectedPort = expectedPort
         self.portFlagStyle = portFlagStyle
         self.environment = environment
+        self.kind = kind
+    }
+
+    /// 80 and 443 are Caddy's own listeners, so a route there proxies to itself.
+    public static func isRoutablePort(_ port: Int) -> Bool {
+        ProxyRoute.isValidPort(port) && port != 80 && port != 443
+    }
+
+    public static func portRoute(name: String, domain: LocalDomain, port: Int, directory: URL?) -> Service? {
+        guard isRoutablePort(port) else { return nil }
+        return Service(
+            name: name, directory: directory, framework: .unknown, command: "",
+            domain: domain, portMode: .fixed(port), kind: .portRoute
+        )
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        directory = try container.decodeIfPresent(URL.self, forKey: .directory)
+        framework = try container.decode(ServiceType.self, forKey: .framework)
+        command = try container.decode(String.self, forKey: .command)
+        domain = try container.decode(LocalDomain.self, forKey: .domain)
+        portMode = try container.decode(PortMode.self, forKey: .portMode)
+        expectedPort = try container.decodeIfPresent(Int.self, forKey: .expectedPort)
+        portFlagStyle = try container.decode(PortFlagStyle.self, forKey: .portFlagStyle)
+        environment = try container.decode([String: String].self, forKey: .environment)
+        // Absent in every file written before routes existed, and all of those were commands.
+        kind = try container.decodeIfPresent(ServiceKind.self, forKey: .kind) ?? .command
+        if kind == .portRoute, portMode.fixedValue.map(Self.isRoutablePort) != true {
+            throw DecodingError.dataCorruptedError(
+                forKey: .portMode, in: container,
+                debugDescription: "A port route needs a fixed port other than 80 and 443."
+            )
+        }
     }
 
     public var url: URL? {
@@ -135,7 +195,7 @@ public struct Service: Identifiable, Hashable, Codable, Sendable {
 public struct Project: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
     public var name: String
-    public var directory: URL
+    public var directory: URL?
     public var services: [Service]
     /// The icon the user picked. Relative to `directory` when the file is inside
     /// the project, absolute otherwise; the leading slash tells the two apart
@@ -148,7 +208,7 @@ public struct Project: Identifiable, Hashable, Codable, Sendable {
     public init(
         id: UUID = UUID(),
         name: String,
-        directory: URL,
+        directory: URL?,
         services: [Service] = [],
         iconPath: String? = nil
     ) {
@@ -166,21 +226,21 @@ public struct Project: Identifiable, Hashable, Codable, Sendable {
     /// The picked icon as an absolute URL, or nil when the project is on automatic.
     public var iconURL: URL? {
         guard let iconPath else { return nil }
-        return iconPath.hasPrefix("/")
-            ? URL(fileURLWithPath: iconPath)
-            : directory.appendingPathComponent(iconPath)
+        if iconPath.hasPrefix("/") { return URL(fileURLWithPath: iconPath) }
+        return directory?.appendingPathComponent(iconPath)
     }
 
     /// How a picked file should be stored: relative when it lives in the project.
     public func iconPathValue(for url: URL) -> String {
-        let base = directory.standardizedFileURL.path
         let path = url.standardizedFileURL.path
+        guard let base = directory?.standardizedFileURL.path else { return path }
         guard path.hasPrefix(base + "/") else { return path }
         return String(path.dropFirst(base.count + 1))
     }
 
     /// Home-relative path for display, for example `~/Projects/wishfox`.
-    public var displayPath: String {
+    public var displayPath: String? {
+        guard let directory else { return nil }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let path = directory.path
         return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
