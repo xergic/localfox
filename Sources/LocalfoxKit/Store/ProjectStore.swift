@@ -22,6 +22,7 @@ public enum StoreError: Error, Equatable, Sendable, LocalizedError {
     case fromTheFuture(path: String, found: Int, supported: Int)
     case unwritable(path: String, underlying: String)
     case duplicateDomain(String)
+    case refusingToOverwrite(path: String)
 
     public var errorDescription: String? {
         switch self {
@@ -39,6 +40,11 @@ public enum StoreError: Error, Equatable, Sendable, LocalizedError {
             "Could not save the Localfox configuration to \(path). \(underlying)"
         case let .duplicateDomain(domain):
             "\(domain) is already used by another service. Every domain must be unique."
+        case let .refusingToOverwrite(path):
+            """
+            Localfox could not read its configuration at \(path), so it will not save \
+            over it. Fix or move the file, then relaunch Localfox.
+            """
         }
     }
 }
@@ -51,7 +57,10 @@ public actor ProjectStore {
     public let url: URL
 
     private var document: StoreDocument
-    private var hasLoaded = false
+    /// Set when `load` threw. Saving after that would replace a file this build
+    /// could not read with the empty list it fell back to, which is how a
+    /// downgrade loses every project the newer build wrote.
+    private var loadFailed = false
 
     public static func defaultURL() -> URL {
         let base = FileManager.default
@@ -67,7 +76,7 @@ public actor ProjectStore {
 
     public func load() throws -> [Project] {
         guard FileManager.default.fileExists(atPath: url.path) else {
-            hasLoaded = true
+            loadFailed = false
             return document.projects
         }
 
@@ -75,12 +84,14 @@ public actor ProjectStore {
         do {
             data = try Data(contentsOf: url)
         } catch {
+            loadFailed = true
             throw StoreError.unreadable(path: url.path, underlying: error.localizedDescription)
         }
 
         do {
             document = try JSONDecoder().decode(StoreDocument.self, from: data)
         } catch {
+            loadFailed = true
             throw StoreError.malformed(path: url.path, underlying: error.localizedDescription)
         }
 
@@ -88,6 +99,7 @@ public actor ProjectStore {
         // failure mode this prevents is an older Localfox opening the file,
         // saving, and destroying configuration it never understood.
         guard document.version <= StoreDocument.currentVersion else {
+            loadFailed = true
             throw StoreError.fromTheFuture(
                 path: url.path,
                 found: document.version,
@@ -95,13 +107,14 @@ public actor ProjectStore {
             )
         }
 
-        hasLoaded = true
+        loadFailed = false
         return document.projects
     }
 
     public func projects() -> [Project] { document.projects }
 
     public func save(_ projects: [Project]) throws {
+        guard !loadFailed else { throw StoreError.refusingToOverwrite(path: url.path) }
         try Self.assertDomainsAreUnique(in: projects)
         document.projects = projects
         document.version = StoreDocument.currentVersion

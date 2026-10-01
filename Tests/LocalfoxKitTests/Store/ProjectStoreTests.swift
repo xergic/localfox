@@ -191,4 +191,18 @@ struct ProjectStoreTests {
 
         #expect(try await ProjectStore(url: url).load() == [good])
     }
+
+    @Test("a save after a failed load refuses rather than overwriting the file")
+    func refusesToOverwriteUnreadable() async throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let original = Data(#"{"version":99,"projects":[]}"#.utf8)
+        try original.write(to: url)
+
+        let store = ProjectStore(url: url)
+        await #expect(throws: StoreError.self) { try await store.load() }
+        await #expect(throws: StoreError.refusingToOverwrite(path: url.path)) { try await store.save([]) }
+        #expect(try Data(contentsOf: url) == original)
+    }
 }
