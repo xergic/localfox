@@ -361,7 +361,8 @@ route does not have.
 
 **Store version 2.** Bumping the version is what stops a 1.x build reading a route as an
 empty command. `ProjectStore` refuses to save after a failed load, so a refused file is
-never overwritten.
+never overwritten. That guard protects only builds from this version on, because shipped
+1.2.0 lacks it and overwrites a file it failed to load.
 
 **Routes draw `arrow.left.arrow.right`, and the header counts waiting separately.** A
 waiting route is not running and not failed, so folding it into either count misleads.

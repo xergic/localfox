@@ -10,7 +10,7 @@ Notable changes to Localfox. The format follows [Keep a Changelog](https://keepa
 - The header summary shows a count of waiting routes.
 
 ### Changed
-- The configuration format is version 2. Localfox 1.2.0 cannot open a configuration saved by this version.
+- The configuration format is version 2. Localfox 1.2.0 cannot open a configuration saved by this version and may overwrite it.
 - Quitting clears every route from the proxy, since a route's server keeps running.
 - The dashboard **+** button opens a menu to add a project or route a port.
 
