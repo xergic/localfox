@@ -21,7 +21,7 @@ struct AddRouteSheet: View {
         _port = State(initialValue: port)
     }
 
-    private var parsedPort: Int? { Int(port.trimmingCharacters(in: .whitespaces)) }
+    private var parsedPort: Int? { Service.routablePort(from: port) }
 
     private var suggestedDomain: String {
         let slug = LocalDomain.slug(name)
@@ -29,11 +29,9 @@ struct AddRouteSheet: View {
     }
 
     static func portError(for text: String) -> String? {
-        guard !text.isEmpty else { return nil }
-        guard let port = Int(text.trimmingCharacters(in: .whitespaces)), Service.isRoutablePort(port) else {
-            return "Use a port from 1 to 65535, other than 80 and 443"
-        }
-        return nil
+        text.isEmpty || Service.routablePort(from: text) != nil
+            ? nil
+            : "Use a port from 1 to 65535, other than 80 and 443"
     }
 
     private var portError: String? { Self.portError(for: port) }
@@ -48,7 +46,7 @@ struct AddRouteSheet: View {
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
             && LocalDomain(domain) != nil && domainError == nil
-            && parsedPort != nil && portError == nil
+            && parsedPort != nil
     }
 
     var body: some View {

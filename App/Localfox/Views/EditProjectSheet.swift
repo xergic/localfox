@@ -329,7 +329,7 @@ struct EditProjectSheet: View {
 
     private func hasValidPort(_ row: EditableService) -> Bool {
         guard row.kind == .portRoute else { return true }
-        return Int(row.port.trimmingCharacters(in: .whitespaces)).map(Service.isRoutablePort) == true
+        return Service.routablePort(from: row.port) != nil
     }
 
     private func clash(for row: EditableService) -> String? {
@@ -351,7 +351,7 @@ struct EditProjectSheet: View {
         edited.services = rows.compactMap { row in
             guard let domain = LocalDomain(row.domain) else { return nil }
             let name = row.name.trimmingCharacters(in: .whitespaces)
-            let port = Int(row.port.trimmingCharacters(in: .whitespaces))
+            let port = Service.routablePort(from: row.port)
             if row.isNew {
                 guard let port else { return nil }
                 return Service.portRoute(name: name, domain: domain, port: port, directory: project.directory)

@@ -48,4 +48,12 @@ struct PortRouteTests {
         #expect(status.port == nil)
         #expect(!status.isTransitioning)
     }
+
+    @Test("a typed port parses only when a route can use it")
+    func parsesTypedPort() {
+        #expect(Service.routablePort(from: " 8081 ") == 8081)
+        #expect(Service.routablePort(from: "443") == nil)
+        #expect(Service.routablePort(from: "abc") == nil)
+        #expect(Service.routablePort(from: "") == nil)
+    }
 }

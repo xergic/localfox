@@ -156,6 +156,11 @@ public struct Service: Identifiable, Hashable, Codable, Sendable {
         ProxyRoute.isValidPort(port) && port != 80 && port != 443
     }
 
+    /// The port typed into a form, or nil while it is not one a route can use.
+    public static func routablePort(from text: String) -> Int? {
+        Int(text.trimmingCharacters(in: .whitespaces)).flatMap { isRoutablePort($0) ? $0 : nil }
+    }
+
     public static func portRoute(name: String, domain: LocalDomain, port: Int, directory: URL?) -> Service? {
         guard isRoutablePort(port) else { return nil }
         return Service(
