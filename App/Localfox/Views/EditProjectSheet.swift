@@ -318,13 +318,18 @@ struct EditProjectSheet: View {
     private var editedIDs: Set<UUID> { Set(project.services.map(\.id)).union(rows.map(\.id)) }
 
     private var canSave: Bool {
-        guard !projectName.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        guard !projectName.trimmingCharacters(in: .whitespaces).isEmpty, !rows.isEmpty else { return false }
         return rows.allSatisfy {
             !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
                 && LocalDomain($0.domain) != nil
                 && clash(for: $0) == nil
-                && ($0.kind == .command || Int($0.port.trimmingCharacters(in: .whitespaces)).map(Service.isRoutablePort) == true)
+                && hasValidPort($0)
         }
+    }
+
+    private func hasValidPort(_ row: EditableService) -> Bool {
+        guard row.kind == .portRoute else { return true }
+        return Int(row.port.trimmingCharacters(in: .whitespaces)).map(Service.isRoutablePort) == true
     }
 
     private func clash(for row: EditableService) -> String? {
@@ -415,7 +420,10 @@ private struct ServiceEditor: View {
     private var isRoute: Bool { row.kind == .portRoute }
 
     var body: some View {
-        DetailCard(title: "Service", symbol: "square.stack.3d.up") {
+        DetailCard(
+            title: isRoute ? "Route" : "Service",
+            symbol: isRoute ? "arrow.left.arrow.right" : "square.stack.3d.up"
+        ) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     ServiceIconView(type: row.framework, isPortRoute: isRoute, size: Theme.Metrics.serviceIconSmall)
