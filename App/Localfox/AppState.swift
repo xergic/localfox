@@ -67,6 +67,7 @@ final class AppState {
     // MARK: - Lifecycle
 
     func load() async {
+        startRouteWatcher()
         do {
             let loaded = try await store.load()
             assign(\.projects, loaded)
@@ -293,7 +294,6 @@ final class AppState {
                 Task { @MainActor in self?.setTunnelStatus(status, for: id) }
             }
         )
-        startRouteWatcher()
     }
 
     // MARK: - Running services

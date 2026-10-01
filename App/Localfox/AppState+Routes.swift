@@ -15,7 +15,11 @@ extension AppState {
 
     /// One consumer loop, so events reach `setStatus` in the order the watcher
     /// made them. The task inherits the main actor, so there is no hop per event.
+    ///
+    /// Started from `load()`, not from the shell probe, which can take its full
+    /// timeout and a route needs no shell. Once only, since `load()` can rerun.
     func startRouteWatcher() {
+        guard routeWatcher == nil else { return }
         let watcher = PortRouteWatcher()
         routeWatcher = watcher
         Task { [weak self] in
