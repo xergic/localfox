@@ -51,12 +51,12 @@ struct AddProjectSheet: View {
     private var header: some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Theme.card)
+                .fill(Theme.accent)
                 .frame(width: 36, height: 36)
                 .overlay(
                     Image(systemName: "folder.badge.plus")
-                        .font(.system(size: 15))
-                        .foregroundStyle(Theme.accentText)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.onAccent)
                 )
             VStack(alignment: .leading, spacing: 1) {
                 Text("Add a project")
@@ -69,7 +69,12 @@ struct AddProjectSheet: View {
                     .truncationMode(.head)
             }
             Spacer(minLength: 0)
-            IconButton(symbol: "xmark", help: "Close") { dismiss() }
+            IconButton(
+                symbol: "xmark",
+                help: "Close",
+                frameSize: Theme.Metrics.headerButtonSize,
+                filled: true
+            ) { dismiss() }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

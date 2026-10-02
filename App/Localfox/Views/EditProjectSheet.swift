@@ -247,7 +247,12 @@ struct EditProjectSheet: View {
                     .truncationMode(.head)
             }
             Spacer(minLength: 0)
-            IconButton(symbol: "xmark", help: "Close") { dismiss() }
+            IconButton(
+                symbol: "xmark",
+                help: "Close",
+                frameSize: Theme.Metrics.headerButtonSize,
+                filled: true
+            ) { dismiss() }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

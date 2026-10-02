@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Ported from Portfox, whose card and row chrome this matches exactly.
 struct PreferencesSheet: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
@@ -25,70 +24,71 @@ struct PreferencesSheet: View {
     private var header: some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-                .fill(Theme.card)
+                .fill(Theme.accent)
                 .frame(width: 36, height: 36)
                 .overlay(
                     Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Theme.primaryText)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.onAccent)
                 )
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Localfox Preferences")
+                Text("Localfox preferences")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.primaryText)
                 Text("Configure appearance, startup and sharing")
-                    .font(.system(size: 11))
+                    .font(.lfDetail)
                     .foregroundStyle(Theme.secondaryText)
             }
 
             Spacer()
 
-            IconButton(symbol: "xmark", help: "Close") { dismiss() }
+            IconButton(
+                symbol: "xmark",
+                help: "Close",
+                frameSize: Theme.Metrics.headerButtonSize,
+                filled: true
+            ) { dismiss() }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
     }
 
     private var sections: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             appearanceSection
             generalSection
             proxySection
             sharingSection
         }
-        .padding(14)
+        .padding(16)
     }
 
     private var proxySection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("PROXY", symbol: "arrow.left.arrow.right")
-            PreferencesCard {
-                PreferenceRow(
-                    title: "Record requests",
-                    subtitle: "Method, URL, status and duration. Headers and cookies are never recorded"
-                ) {
-                    Toggle("", isOn: Binding(
-                        get: { state.preferences.recordsRequests },
-                        // The proxy only learns about this through a route sync,
-                        // so the write and the sync are one action.
-                        set: { enabled in
-                            state.preferences.recordsRequests = enabled
-                            Task { await state.syncProxy() }
-                        }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.checkbox)
-                }
+        DetailCard(title: "Proxy", symbol: "arrow.left.arrow.right") {
+            PreferenceRow(
+                title: "Record requests",
+                subtitle: "Method, URL, status and duration. Headers and cookies are never recorded"
+            ) {
+                Toggle("", isOn: Binding(
+                    get: { state.preferences.recordsRequests },
+                    // The proxy only learns about this through a route sync,
+                    // so the write and the sync are one action.
+                    set: { enabled in
+                        state.preferences.recordsRequests = enabled
+                        Task { await state.syncProxy() }
+                    }
+                ))
+                .labelsHidden()
+                .toggleStyle(.checkbox)
             }
         }
     }
 
     private var sharingSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("SHARING", symbol: "antenna.radiowaves.left.and.right")
-            PreferencesCard {
-                @Bindable var preferences = state.preferences
+        DetailCard(title: "Sharing", symbol: "antenna.radiowaves.left.and.right") {
+            @Bindable var preferences = state.preferences
+            VStack(alignment: .leading, spacing: Theme.Metrics.cardPaddingV) {
                 PreferenceRow(
                     title: "Rewrite the Host header",
                     subtitle: "Needed by Vite and Next, wrong for Django ALLOWED_HOSTS and OAuth"
@@ -114,27 +114,23 @@ struct PreferencesSheet: View {
     }
 
     private var appearanceSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("APPEARANCE", symbol: "paintbrush")
-            PreferencesCard {
-                @Bindable var appearance = state.appearance
-                PreferenceRow(
-                    title: "Appearance",
-                    subtitle: "Follow the system theme, or pin Localfox to light or dark"
-                ) {
-                    SegmentedControl(
-                        selection: $appearance.preference,
-                        options: AppAppearance.allCases.map { ($0, $0.displayName) }
-                    )
-                }
+        DetailCard(title: "Appearance", symbol: "paintbrush") {
+            @Bindable var appearance = state.appearance
+            PreferenceRow(
+                title: "Theme",
+                subtitle: "Follow the system theme, or pin Localfox to light or dark"
+            ) {
+                SegmentedControl(
+                    selection: $appearance.preference,
+                    options: AppAppearance.allCases.map { ($0, $0.displayName) }
+                )
             }
         }
     }
 
     private var generalSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("GENERAL", symbol: "gearshape")
-            PreferencesCard {
+        DetailCard(title: "General", symbol: "gearshape") {
+            VStack(alignment: .leading, spacing: Theme.Metrics.cardPaddingV) {
                 PreferenceRow(
                     title: "Launch at login",
                     subtitle: "Start Localfox automatically when you log in"
@@ -148,10 +144,8 @@ struct PreferencesSheet: View {
                 }
                 if let error = launchAtLogin.lastError {
                     Text(error)
-                        .font(.system(size: 10))
+                        .font(.lfBadge)
                         .foregroundStyle(Theme.danger)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 10)
                 }
                 CardDivider()
                 PreferenceRow(
@@ -175,34 +169,10 @@ struct PreferencesSheet: View {
     private var footer: some View {
         HStack {
             Spacer()
-            ActionButton(title: "Done") { dismiss() }
+            ActionButton(title: "Done", symbol: "checkmark", isPrimary: true) { dismiss() }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-    }
-
-    private func sectionLabel(_ title: String, symbol: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol)
-                .font(.system(size: 9, weight: .semibold))
-            Text(title)
-                .font(.lfSection)
-                .kerning(0.8)
-        }
-        .foregroundStyle(Theme.tertiaryText)
-        .padding(.horizontal, 2)
-    }
-}
-
-private struct PreferencesCard<Content: View>: View {
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0, content: content)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-                    .fill(Theme.card)
-            )
     }
 }
 
@@ -215,21 +185,18 @@ private struct PreferenceRow<Control: View>: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.lfDetailStrong)
                     .foregroundStyle(Theme.primaryText)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 10))
+                        .font(.lfBadge)
                         .foregroundStyle(Theme.secondaryText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 12)
             control()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
     }
 }
 
@@ -246,26 +213,20 @@ private struct SegmentedControl<Value: Hashable>: View {
                     selection = option.value
                 } label: {
                     Text(option.label)
-                        .font(.mono(11, .medium))
+                        .font(.lfBadge)
                         .foregroundStyle(option.value == selection ? Theme.onAccent : Theme.secondaryText)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
+                        .frame(height: Theme.Metrics.controlHeight - 8)
                         .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.Metrics.badgeRadius + 1, style: .continuous)
                                 .fill(option.value == selection ? Theme.accent : Color.clear)
                         )
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(2)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Theme.pill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Theme.border, lineWidth: 1)
-                )
-        )
+        .padding(3)
+        .background(ControlBackground(fill: Theme.pill))
     }
 }
