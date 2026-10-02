@@ -22,8 +22,9 @@ On first launch, Localfox asks you to approve its helper in System Settings and 
 its certificate authority. macOS may ask for your password for each. See [HTTPS](#https) for
 what is trusted and where.
 
-Remove it with `brew uninstall --cask localfox`. Add `--zap` to also delete its data and
-remove its certificate authority from your login keychain.
+Remove it with `brew uninstall --cask localfox`. Add `--zap` to also remove its helper, delete its
+data and remove its certificate authority from your login keychain. Without `--zap`, the
+helper stays loaded until you restart your Mac.
 
 ## Requirements for building
 

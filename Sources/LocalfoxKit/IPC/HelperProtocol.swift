@@ -119,6 +119,13 @@ public enum HelperIdentity {
 
     func stopProxy(reply: @escaping (String?) -> Void)
 
+    /// Stops Caddy and exits, so the next message starts the binary now in the bundle.
+    ///
+    /// An upgrade replaces the bundle, but launchd keeps the old process serving.
+    /// The alternative is the cask removing the job on uninstall, which is a
+    /// `sudo launchctl` and a password prompt on every `brew upgrade`.
+    func retire(reply: @escaping (String?) -> Void)
+
     /// The PEM of the local CA root, so the app can show its fingerprint and
     /// evaluate trust without needing root itself.
     func exportRootCA(reply: @escaping (Data?, String?) -> Void)

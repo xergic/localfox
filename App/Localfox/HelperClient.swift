@@ -104,8 +104,11 @@ final class HelperClient {
             assignState(.requiresApproval)
         case .enabled:
             do {
-                let response = try await ping()
+                var response = try await ping()
                 let expectedVersion = Self.appVersion
+                if response.version != expectedVersion, let replaced = await replaceOutdatedHelper() {
+                    response = replaced
+                }
                 guard response.version == expectedVersion else {
                     assignState(.versionMismatch(expected: expectedVersion, found: response.version))
                     return
@@ -131,6 +134,36 @@ final class HelperClient {
                 reply.resume(returning: (version, caddyRunning))
             }
         }
+    }
+
+    /// Swaps the helper launchd kept serving across an upgrade for the one in this bundle.
+    ///
+    /// Returns nil when the helper predates `retire` or the new one never answers,
+    /// which leaves the version mismatch and Reinstall Helper as the way out.
+    private func replaceOutdatedHelper() async -> (version: String, caddyRunning: Bool)? {
+        do {
+            try await call(operation: "replace the outdated helper") { proxy, reply in
+                proxy.retire { message in
+                    reply.resumeHelperResult(message)
+                }
+            }
+        } catch {
+            return nil
+        }
+
+        // The old process keeps answering until it exits, and launchd throttles
+        // a relaunch to its 10 second ThrottleInterval, so poll past that.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+        while ContinuousClock.now < deadline {
+            // A fresh connection each time, so a handler from the exiting
+            // process cannot mark the new one unreachable after it answers.
+            tearDownConnection()
+            try? await Task.sleep(for: .milliseconds(250))
+            if let response = try? await ping(), response.version == Self.appVersion {
+                return response
+            }
+        }
+        return nil
     }
 
     func setRoutes(_ routes: [ProxyRoute], recordsRequests: Bool) async throws {

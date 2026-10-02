@@ -47,7 +47,7 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
         let reply = XPCReply(reply)
         Task {
             let running = await runtime.isRunning()
-            reply.call(Self.version, running)
+            reply.call(self.version, running)
         }
     }
 
@@ -100,6 +100,18 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
         }
     }
 
+    func retire(reply: @escaping (String?) -> Void) {
+        let reply = XPCReply(reply)
+        Task {
+            await runtime.stopProxy()
+            reply.call(nil)
+            // The reply is only queued for sending, and exiting at once can drop it.
+            try? await Task.sleep(for: .milliseconds(250))
+            // A clean exit, so KeepAlive does not respawn it. The next message does.
+            exit(EXIT_SUCCESS)
+        }
+    }
+
     func exportRootCA(reply: @escaping (Data?, String?) -> Void) {
         let reply = XPCReply(reply)
         Task {
@@ -145,9 +157,10 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
     /// under `Contents/MacOS`, so there is nothing to walk. The build number
     /// rather than the marketing version, because that is what changes on every
     /// build and so is what tells the app launchd is serving a stale helper.
-    private static var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
-    }
+    ///
+    /// Read once at launch. An upgrade swaps the Info.plist under a running
+    /// helper, and a lazy read would report the new build from the old binary.
+    private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
 
     /// Foundation exposes this Objective-C property to KVC but not to Swift.
     /// The token comes from the kernel with the accepted Mach message, avoiding
