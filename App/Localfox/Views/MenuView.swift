@@ -311,16 +311,15 @@ struct ServiceRow: View {
                 // beside the domain the badge truncated the one fact the row shows.
                 // A public tunnel the user has forgotten is the failure that
                 // matters here, so it is marked at rest and not behind hover.
-                HStack(spacing: 6) {
-                    Text(service.name)
-                        .font(.lfName)
-                        .foregroundStyle(Theme.primaryText)
-                        .lineLimit(1)
-                    if let shareLabel {
-                        TintedBadge(text: shareLabel, tint: shareTint)
-                            .fixedSize()
-                            .help(shareHelp)
+                // A name too long to sit beside the badge drops the badge to a
+                // line of its own rather than truncating the name.
+                if let shareLabel {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { nameText; shareBadge(shareLabel) }
+                        VStack(alignment: .leading, spacing: 3) { nameText; shareBadge(shareLabel) }
                     }
+                } else {
+                    nameText
                 }
                 Text(service.domain.value)
                     .font(.lfSubtitle)
@@ -459,6 +458,19 @@ struct ServiceRow: View {
         case .failed: Theme.danger
         case .starting, .off: Theme.accentText
         }
+    }
+
+    private var nameText: some View {
+        Text(service.name)
+            .font(.lfName)
+            .foregroundStyle(Theme.primaryText)
+            .lineLimit(1)
+    }
+
+    private func shareBadge(_ label: String) -> some View {
+        TintedBadge(text: label, tint: shareTint)
+            .fixedSize()
+            .help(shareHelp)
     }
 
     private var shareLabel: String? {
