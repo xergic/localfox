@@ -6,6 +6,7 @@ Notable changes to Localfox. The format follows [Keep a Changelog](https://keepa
 ## [Unreleased]
 
 ### Added
+- The menu has a search field. It matches service, domain, framework, command and port, and it takes the keyboard when the menu opens. ↑ and ↓ move through the list, Return opens the selected service or starts it, ⌘⌫ stops it, and Escape clears the search.
 - A global shortcut opens the menu from any app. The default is ⌃⌥L, and you can change it in Settings › General.
 ## [1.2.1] - 2026-10-02
 
