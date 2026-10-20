@@ -2,8 +2,7 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-
-## [Unreleased]
+## [1.3.0] - 2026-10-20
 
 ### Added
 - The menu has a search field. It matches service, domain, framework, command and port, and it takes the keyboard when the menu opens. ↑ and ↓ move through the list, Return opens the selected service or starts it, ⌘⌫ stops it, and Escape clears the search.
