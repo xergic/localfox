@@ -36,11 +36,12 @@ final class HelperClient {
             try service.register()
             assignError(nil)
         } catch where Self.isAlreadyRegistered(error) {
-            // Already registered means the stale copy is still loaded, which is
-            // what `reinstall()` exists to clear. Say so rather than reporting
-            // success and leaving the user pressing a button that does nothing.
-            failureMessage = "The helper is already registered. Use Reinstall Helper to replace it."
-            assignError(failureMessage)
+            // A registration left behind by a differently signed build: deleting
+            // the app does not remove it, and launchd then kills the new helper
+            // for a launch constraint recorded from the old signature. Only
+            // Reinstall clears it, and this state offers no Reinstall button.
+            await reinstall()
+            return
         } catch {
             failureMessage =
                 "Localfox could not register its helper. Move Localfox to Applications, then try again. "
@@ -48,6 +49,12 @@ final class HelperClient {
             assignError(failureMessage)
         }
         await refresh()
+        // The same leftover, when macOS accepted the registration without
+        // complaint and still reports nothing registered.
+        if failureMessage == nil, state == .notRegistered {
+            await reinstall()
+            return
+        }
         if let failureMessage { assignError(failureMessage) }
     }
 
