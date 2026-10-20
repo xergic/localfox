@@ -158,6 +158,18 @@ struct PreferencesSheet: View {
                 }
                 CardDivider()
                 PreferenceRow(
+                    title: "Notify when a service crashes",
+                    subtitle: "A banner with a Restart button when a server stops without you asking"
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { state.preferences.notifiesCrashes },
+                        set: { state.preferences.notifiesCrashes = $0 }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.checkbox)
+                }
+                CardDivider()
+                PreferenceRow(
                     title: "Share anonymous usage data",
                     subtitle: "Never includes domains, paths or ports"
                 ) {

@@ -12,6 +12,11 @@ struct LocalfoxApp: App {
     init() {
         let state = AppState()
         _state = State(initialValue: state)
+        AppDelegate.state = state
+        state.crashNotifier.onRestart = { serviceID in
+            guard let service = state.projects.lazy.flatMap(\.services).first(where: { $0.id == serviceID }) else { return }
+            Task { await state.restart(service) }
+        }
         KeyboardShortcuts.onKeyUp(for: .togglePopover) {
             // An `LSUIElement` app is never active on its own, and an inactive
             // app's window cannot take the keystrokes meant for the search field.
@@ -24,10 +29,7 @@ struct LocalfoxApp: App {
         MenuBarExtra {
             MenuView()
                 .environment(state)
-                .task {
-                    AppDelegate.state = state
-                    await state.load()
-                }
+                .task { await state.load() }
         } label: {
             MenuBarLabel(runningCount: state.runningCount)
         }
@@ -107,7 +109,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         Telemetry.setEnabled(Preferences().sharesUsageData)
-        guard let request = SnapshotRenderer.request else { return }
+        guard let request = SnapshotRenderer.request else {
+            AppDelegate.state?.crashNotifier.activate()
+            return
+        }
         // Rendered offscreen and then exits, so no window is ever shown.
         Task { @MainActor in
             await SnapshotRenderer.run(request, state: AppState())
@@ -128,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var isTerminating = false
-    /// Set by the scene, because the delegate is created before the state is.
+    /// Set by `LocalfoxApp.init`, because the delegate is created before the state is.
     @MainActor static var state: AppState?
 }
 

@@ -28,6 +28,7 @@ final class Preferences {
         static let warningAccepted = Flag(key: "sharing.warningAccepted", defaultsTo: false)
         static let recordsRequests = Flag(key: "proxy.recordsRequests", defaultsTo: true)
         static let sharesUsageData = Flag(key: "telemetry.sharesUsageData", defaultsTo: true)
+        static let notifiesCrashes = Flag(key: "notifications.crashes", defaultsTo: true)
     }
 
     private let defaults: UserDefaults
@@ -49,15 +50,19 @@ final class Preferences {
     /// Sends anonymous usage counts. Applying a change is `Telemetry.setEnabled`.
     var sharesUsageData: Bool { didSet { write(sharesUsageData, Key.sharesUsageData, oldValue) } }
 
+    /// A banner when a service stops without being asked to.
+    var notifiesCrashes: Bool { didSet { write(notifiesCrashes, Key.notifiesCrashes, oldValue) } }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        for flag in [Key.rewriteHost, Key.warningAccepted, Key.recordsRequests, Key.sharesUsageData] {
+        for flag in [Key.rewriteHost, Key.warningAccepted, Key.recordsRequests, Key.sharesUsageData, Key.notifiesCrashes] {
             defaults.register(defaults: [flag.key: flag.defaultsTo])
         }
         rewritesHostHeader = defaults.bool(forKey: Key.rewriteHost.key)
         warningAccepted = defaults.bool(forKey: Key.warningAccepted.key)
         recordsRequests = defaults.bool(forKey: Key.recordsRequests.key)
         sharesUsageData = defaults.bool(forKey: Key.sharesUsageData.key)
+        notifiesCrashes = defaults.bool(forKey: Key.notifiesCrashes.key)
     }
 
     private func write(_ value: Bool, _ flag: Flag, _ oldValue: Bool) {

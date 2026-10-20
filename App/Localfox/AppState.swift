@@ -24,6 +24,7 @@ final class AppState {
     /// Owns registration and the XPC channel. Read through `helper`.
     let helperClient: HelperClient
     let lastResponses = LastResponses()
+    let crashNotifier = CrashNotifier()
     let appearance = Appearance()
     let preferences = Preferences()
     let tunnelTargets = TunnelTargets()
@@ -539,6 +540,7 @@ final class AppState {
             return
         }
         statuses[serviceID] = status
+        noteStatusChange(status, of: serviceID)
         // A tunnel outliving the port it dials is the one failure this feature
         // must not have: cloudflared keeps serving 502s under a URL the user has
         // already sent to somebody. A restart counts, because the new process
