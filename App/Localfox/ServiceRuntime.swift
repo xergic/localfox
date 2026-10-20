@@ -12,6 +12,9 @@ actor ServiceRuntime {
         var log: LogBuffer
         var discovery: Task<Void, Never>?
         var drain: Task<Void, Never>?
+        /// Set before Localfox signals the group, so the pipes closing as a result
+        /// read as the stop the user asked for and not as a crash.
+        var isStopping = false
     }
 
     private var running: [UUID: Running] = [:]
@@ -125,7 +128,23 @@ actor ServiceRuntime {
                     }
                 }
             }
+            await self?.outputClosed(for: id)
         }
+    }
+
+    /// Both pipes closed. Unless Localfox asked for it, the server ended on its
+    /// own: a crash, a port already taken, a `kill` from a terminal. Without this
+    /// a dead server stayed "running" and kept its proxy route to nothing.
+    private func outputClosed(for id: UUID) async {
+        guard let pid = running[id]?.process.pid, running[id]?.isStopping == false else { return }
+        guard let reason = await ProcessSpawner.reap(pid) else { return }
+        // Read again after the wait: a Stop may have started in the meantime.
+        guard let record = running[id], !record.isStopping else { return }
+        running[id] = nil
+        record.discovery?.cancel()
+        // A child the leader left behind would otherwise keep the port.
+        _ = await ProcessSpawner.terminate(group: record.process.processGroup)
+        onStatus(id, .failed(.init(reason: reason, output: String(record.log.text.suffix(2_000)))))
     }
 
     private func appendLog(_ text: String, for id: UUID) {
@@ -153,12 +172,23 @@ actor ServiceRuntime {
             } catch {
                 guard await self?.isRunning(service.id) == true else { return }
                 let tail = await self?.log(for: service.id) ?? ""
+                // Torn down before the failure is reported. A record left behind
+                // made `start` return without a word, and a failed service offers
+                // no Stop or Restart, so a server that lost its port to one
+                // started in a terminal could never be started again.
+                await self?.abandon(service.id)
                 await self?.report(
                     .failed(.init(reason: .noPortDiscovered, output: String(tail.suffix(2_000)))),
                     for: service.id
                 )
             }
         }
+    }
+
+    private func abandon(_ id: UUID) async {
+        guard let record = running.removeValue(forKey: id) else { return }
+        record.drain?.cancel()
+        _ = await ProcessSpawner.terminate(group: record.process.processGroup)
     }
 
     private func report(_ status: ServiceStatus, for id: UUID) {
@@ -169,6 +199,7 @@ actor ServiceRuntime {
 
     func stop(_ service: Service) async {
         guard let record = running[service.id] else { return }
+        running[service.id]?.isStopping = true
         onStatus(service.id, .stopping)
 
         record.discovery?.cancel()
@@ -188,6 +219,7 @@ actor ServiceRuntime {
     /// outlives the thing that started it.
     func stopAll() async {
         for (id, record) in running {
+            running[id]?.isStopping = true
             record.discovery?.cancel()
             record.drain?.cancel()
             _ = await ProcessSpawner.terminate(group: record.process.processGroup)

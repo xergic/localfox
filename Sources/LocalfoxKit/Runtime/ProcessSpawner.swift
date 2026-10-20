@@ -166,6 +166,25 @@ public enum ProcessSpawner {
         return .killed
     }
 
+    /// Why a reaped child ended, from its raw `waitpid` status. Swift does not
+    /// import `WIFEXITED` and friends, which are C macros.
+    public static func failureReason(waitStatus status: Int32) -> ServiceStatus.Failure.Reason {
+        let signal = status & 0x7f
+        return signal == 0 ? .exited(code: (status >> 8) & 0xff) : .signalled(signal: signal)
+    }
+
+    /// Reaps `pid` if it has exited, waiting up to `limit` for it to. nil while it
+    /// still runs, which is what a server that closed its pipes but stayed up is.
+    public static func reap(_ pid: pid_t, within limit: Duration = .seconds(2)) async -> ServiceStatus.Failure.Reason? {
+        let deadline = ContinuousClock.now.advanced(by: limit)
+        repeat {
+            var status: Int32 = 0
+            if waitpid(pid, &status, WNOHANG) == pid { return failureReason(waitStatus: status) }
+            try? await Task.sleep(for: .milliseconds(50))
+        } while ContinuousClock.now < deadline
+        return nil
+    }
+
     public static func isAlive(_ group: pid_t) -> Bool {
         // Signal 0 checks for the group's existence without delivering anything.
         // ESRCH means gone; EPERM means it exists but belongs to someone else.

@@ -334,8 +334,9 @@ struct ServiceDetailPane: View {
             """
         case .noPortDiscovered:
             """
-            The command is running but never opened a port Localfox could find. \
-            Set the port by hand if this server does not listen on one.
+            The command never opened a port Localfox could find, so Localfox \
+            stopped it. Another process may already hold the port, or this server \
+            listens on one you need to set by hand.
             """
         case let .spawnFailed(code):
             "The command could not be started (errno \(code))."

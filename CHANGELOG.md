@@ -11,6 +11,11 @@ Notable changes to Localfox. The format follows [Keep a Changelog](https://keepa
 - A running service shows the status of its last request beside the port, read from the request log the proxy already keeps. Localfox sends nothing to your server to get it. Hover it for the method, path, time taken and when it happened. It needs "Record requests" on, which is the default.
 - A banner tells you when a service stops without you asking, with the reason and a Restart button. Localfox asks for notification permission the first time a service starts. Turn it off with "Notify when a service crashes" in Settings › General.
 - A global shortcut opens the menu from any app. The default is ⌃⌥L, and you can change it in Settings › General.
+
+### Fixed
+- A service whose server exits on its own, crashes or is killed from a terminal is now marked as failed, with the reason and its last output. Before, it kept showing as running.
+- A service that could not start because its port was taken can be started again once the port is free. Before, Start did nothing until Localfox was relaunched.
+
 ## [1.2.1] - 2026-10-02
 
 ### Added
