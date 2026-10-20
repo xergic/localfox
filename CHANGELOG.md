@@ -2,6 +2,11 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+
+## [Unreleased]
+
+### Added
+- A global shortcut opens the menu from any app. The default is ⌃⌥L, and you can change it in Settings › General.
 ## [1.2.1] - 2026-10-02
 
 ### Added

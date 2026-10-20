@@ -1,11 +1,24 @@
 import AppKit
+import KeyboardShortcuts
 import LocalfoxKit
+import MenuBarExtraAccess
 import SwiftUI
 
 @main
 struct LocalfoxApp: App {
-    @State private var state = AppState()
+    @State private var state: AppState
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+    init() {
+        let state = AppState()
+        _state = State(initialValue: state)
+        KeyboardShortcuts.onKeyUp(for: .togglePopover) {
+            // An `LSUIElement` app is never active on its own, and an inactive
+            // app's window cannot take the keystrokes meant for the search field.
+            NSApp.activate()
+            state.isMenuPresented.toggle()
+        }
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -18,6 +31,9 @@ struct LocalfoxApp: App {
         } label: {
             MenuBarLabel(runningCount: state.runningCount)
         }
+        // SwiftUI has no API to open its own menu bar window, and on macOS 27
+        // clicking the status button from code no longer does it either.
+        .menuBarExtraAccess(isPresented: $state.isMenuPresented)
         // `.window` is what makes this a custom-drawn popover rather than an
         // NSMenu, which cannot host arbitrary SwiftUI.
         .menuBarExtraStyle(.window)

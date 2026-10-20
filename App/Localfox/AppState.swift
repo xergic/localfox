@@ -30,6 +30,8 @@ final class AppState {
     /// Held here rather than in the dashboard's own state, because the popover
     /// asks for the sheet on a window that does not exist yet.
     var presentsPreferences = false
+    /// Bound to the menu bar window, so the global shortcut can open it.
+    var isMenuPresented = false
     private(set) var trust: RootCAStatus = .notGenerated
     private(set) var shellEnvironment: ShellEnvironment?
     private(set) var lastError: String?

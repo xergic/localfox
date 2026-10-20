@@ -6,8 +6,10 @@ Project instructions for Localfox. Read `README.md` for the user-facing descript
 
 A macOS 15+ app that starts local development servers and exposes them at stable
 HTTPS `*.localhost` domains through a bundled Caddy reverse proxy. Swift 6, SwiftUI,
-strict concurrency, no third-party Swift dependencies except TelemetryDeck, which only
-the app target links. The kit, the helper and the CLI never depend on it. Sibling project to Portfox
+strict concurrency. The app target links three third-party packages: TelemetryDeck,
+KeyboardShortcuts for the global shortcut, and MenuBarExtraAccess, because on macOS 27
+the `MenuBarExtra` status button has no target and nothing else can open the popover
+from code. The kit, the helper and the CLI depend on none of them. Sibling project to Portfox
 (`/Users/ondra/Work/Portfox/portfox`), whose conventions and design this follows.
 
 ## Commands

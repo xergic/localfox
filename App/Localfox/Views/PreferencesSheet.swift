@@ -1,3 +1,4 @@
+import KeyboardShortcuts
 import SwiftUI
 
 struct PreferencesSheet: View {
@@ -146,6 +147,14 @@ struct PreferencesSheet: View {
                     Text(error)
                         .font(.lfBadge)
                         .foregroundStyle(Theme.danger)
+                }
+                CardDivider()
+                PreferenceRow(
+                    title: "Open Localfox",
+                    subtitle: "A shortcut that opens the menu from any app"
+                ) {
+                    KeyboardShortcuts.Recorder(for: .togglePopover)
+                        .frame(width: 140)
                 }
                 CardDivider()
                 PreferenceRow(
