@@ -14,6 +14,7 @@ Notable changes to Localfox. The format follows [Keep a Changelog](https://keepa
 
 ### Fixed
 - A service whose server exits on its own, crashes or is killed from a terminal is now marked as failed, with the reason and its last output. Before, it kept showing as running.
+- The menu no longer shows "Finish setting up local HTTPS" after the helper was approved and HTTPS already works. It now checks again each time it opens.
 - A service that could not start because its port was taken can be started again once the port is free. Before, Start did nothing until Localfox was relaunched.
 
 ## [1.2.1] - 2026-10-02

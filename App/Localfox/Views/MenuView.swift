@@ -50,7 +50,15 @@ struct MenuView: View {
         // On the root rather than the field, so the keys still work after a
         // click lands on a row and the field loses focus.
         .onKeyPress { press in handle(press, in: ordered) }
-        .onAppear { Task { await state.refreshLastResponses() } }
+        .onAppear {
+            Task {
+                // The helper is approved in System Settings, outside this process,
+                // and trust is only read while the helper can answer. A check made
+                // before approval would keep this wall up over a working setup.
+                if state.needsSetup { await state.refreshSetup() }
+                await state.refreshLastResponses()
+            }
+        }
         .onDisappear { query = "" }
         .onChange(of: query) { keyboardSelectionID = nil }
     }
