@@ -87,8 +87,11 @@ struct ServiceRow: View {
     /// moves across rows.
     private var trailingSlot: some View {
         ZStack(alignment: .trailing) {
-            PortPill(status: status)
-                .opacity(showsActions ? 0 : 1)
+            HStack(spacing: 8) {
+                LastResponsePill(service: service)
+                PortPill(status: status)
+            }
+            .opacity(showsActions ? 0 : 1)
             if showsHoverActions {
                 actions
                     .opacity(showsActions ? 1 : 0)

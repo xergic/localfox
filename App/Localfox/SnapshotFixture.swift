@@ -40,6 +40,8 @@ enum SnapshotFixture {
             tunnels: [api.id: .live(URL(string: "https://example.trycloudflare.com")!)],
             logs: [api.id: apiLog]
         )
+        state.lastResponses.record(response(200, "/", "wishfox.localhost", ms: 18), for: web.id)
+        state.lastResponses.record(response(500, "/wishlists", "api.wishfox.localhost", ms: 241), for: api.id)
         return (state, api.id)
     }
 
@@ -52,6 +54,13 @@ enum SnapshotFixture {
         [Nest] 4243  - LOG [RoutesResolver] WishlistController {/wishlists}
         [Nest] 4243  - LOG [NestApplication] Nest application successfully started
         """
+
+    private static func response(_ status: Int, _ uri: String, _ host: String, ms: Int) -> AccessLogEntry {
+        AccessLogEntry(
+            id: "\(host)\(uri)", timestamp: .now.addingTimeInterval(-90), host: host, method: "GET",
+            uri: uri, status: status, duration: .milliseconds(ms), size: 2_048
+        )
+    }
 
     private static func service(_ name: String, _ framework: ServiceType, _ domain: String, _ directory: URL) -> Service {
         Service(name: name, directory: directory, framework: framework, command: "pnpm dev", domain: LocalDomain(domain)!)

@@ -50,6 +50,7 @@ struct MenuView: View {
         // On the root rather than the field, so the keys still work after a
         // click lands on a row and the field loses focus.
         .onKeyPress { press in handle(press, in: ordered) }
+        .onAppear { Task { await state.refreshLastResponses() } }
         .onDisappear { query = "" }
         .onChange(of: query) { keyboardSelectionID = nil }
     }

@@ -395,18 +395,9 @@ private struct RequestRow: View {
                 .font(.mono(10))
                 .foregroundStyle(Theme.tertiaryText)
                 .frame(width: 58, alignment: .trailing)
-            TintedBadge(text: String(entry.status), tint: Self.tint(entry.statusClass))
+            TintedBadge(text: String(entry.status), tint: entry.statusClass.tint)
         }
         .padding(.vertical, 3)
-    }
-
-    private static func tint(_ statusClass: AccessLogEntry.StatusClass) -> Color {
-        switch statusClass {
-        case .success: Theme.success
-        case .redirect: Theme.accentText
-        case .clientError, .other: Theme.secondaryText
-        case .serverError: Theme.danger
-        }
     }
 
     private static func size(_ bytes: Int) -> String {

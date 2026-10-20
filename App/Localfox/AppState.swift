@@ -23,6 +23,7 @@ final class AppState {
 
     /// Owns registration and the XPC channel. Read through `helper`.
     let helperClient: HelperClient
+    let lastResponses = LastResponses()
     let appearance = Appearance()
     let preferences = Preferences()
     let tunnelTargets = TunnelTargets()
@@ -241,6 +242,7 @@ final class AppState {
             AccessLogEntry.parse(tail: tail, host: host, limit: Self.requestLimit)
         }.value
         assign(\.requests[service.id], entries.isEmpty ? nil : entries)
+        lastResponses.record(entries.last, for: service.id)
     }
 
     /// The helper already filters by host and returns only this many, so asking
@@ -394,20 +396,8 @@ final class AppState {
 
     var helper: HelperState { helperClient.state }
 
-    /// The URL to open, which only exists once the proxy is actually serving.
-    func url(for service: Service) -> URL? {
-        guard helper.canServe else { return nil }
-        return service.url
-    }
-
     var runningCount: Int {
         statuses.values.count { $0.isRunning }
-    }
-
-    /// Localfox has no unprivileged fallback, so this gates the whole interface
-    /// rather than degrading it.
-    var needsSetup: Bool {
-        !helper.canServe || !trust.isUsable
     }
 
     // MARK: - Editing
@@ -554,6 +544,7 @@ final class AppState {
         // already sent to somebody. A restart counts, because the new process
         // can bind a different port under Auto.
         if wasRunning, !status.isRunning {
+            lastResponses.forget(serviceID)
             // Cleared here as well as asked to stop. A tunnel that already
             // failed has no record left in the runtime, so `stop` returns
             // without reporting `.off`, and the stale failure would sit on a
