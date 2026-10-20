@@ -2,7 +2,7 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.1] - 2026-10-20
 
 ### Fixed
 - Install Helper works when an earlier Localfox build left its helper registered, for example after deleting the app or switching between a release and a locally signed build. Before, the button did nothing and only a Terminal command cleared it.
