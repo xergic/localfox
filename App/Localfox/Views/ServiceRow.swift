@@ -14,7 +14,6 @@ struct ServiceRow: View {
 
     @Environment(AppState.self) private var state
     @State private var isHovering = false
-    @State private var confirmsShare = false
     /// Holds the actions on screen while the QR popover is open, because the
     /// pointer leaves the row to reach it and the button would vanish under it.
     @State private var showsQRCode = false
@@ -65,19 +64,6 @@ struct ServiceRow: View {
             withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
         }
         .contextMenu { menu }
-        .confirmationDialog(
-            "Share \(service.name) on the public internet?",
-            isPresented: $confirmsShare,
-            titleVisibility: .visible
-        ) {
-            Button("Share Publicly", role: .destructive) {
-                state.preferences.warningAccepted = true
-                Task { await state.share(service) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(SharingWarning.exposure(.quick))
-        }
         .opacity(status.isTransitioning ? 0.5 : 1)
     }
 
@@ -239,10 +225,24 @@ struct ServiceRow: View {
 
     private func requestShare() {
         guard status.isRunning else { return }
-        if state.preferences.warningAccepted {
-            Task { await state.share(service) }
-        } else {
-            confirmsShare = true
+        if !state.preferences.warningAccepted {
+            guard confirmsPublicShare() else { return }
+            state.preferences.warningAccepted = true
         }
+        Task { await state.share(service) }
+    }
+
+    /// An app-modal `NSAlert`, not a SwiftUI dialog. This row lives in the menu
+    /// bar popover, and a dialog attached to that window first dimmed it without
+    /// appearing, then appeared with a Share button that took no clicks.
+    private func confirmsPublicShare() -> Bool {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Share \(service.name) on the public internet?"
+        alert.informativeText = SharingWarning.exposure(.quick)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Share Publicly").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
