@@ -119,7 +119,6 @@ enum Theme {
         static let portPillWidth: CGFloat = 66
         /// Space the hover actions occupy. Reserved even at rest, so revealing
         /// them never re-truncates the text or shifts the row under the pointer.
-        static let rowActionsWidth: CGFloat = 72
         /// The project header carries a fourth button, so it reserves more than a
         /// service row. Raising the shared constant instead would cost every
         /// service row twenty points of text width for nothing.

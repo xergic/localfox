@@ -277,9 +277,9 @@ struct ProjectSection: View {
                     .foregroundStyle(Theme.primaryText)
                     .fixedSize()
                 // Hidden rather than squeezed while the actions are up. Reserving
-                // room for four buttons the way `ServiceRow` does leaves a 300pt
-                // sidebar rendering `~/Work/Wishfox/wishfox-api` as `…i`, and the
-                // path is worth more at rest than under the pointer.
+                // room for four buttons leaves a 300pt sidebar rendering
+                // `~/Work/Wishfox/wishfox-api` as `…i`, and the path is worth
+                // more at rest than under the pointer.
                 if let displayPath = project.displayPath {
                     Text(displayPath)
                         .font(.lfSubtitle)

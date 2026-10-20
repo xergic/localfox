@@ -15,9 +15,12 @@ struct ServiceRow: View {
     @Environment(AppState.self) private var state
     @State private var isHovering = false
     @State private var confirmsShare = false
+    /// Holds the actions on screen while the QR popover is open, because the
+    /// pointer leaves the row to reach it and the button would vanish under it.
+    @State private var showsQRCode = false
 
     private var isSelected: Bool { isKeyboardSelected || selection?.wrappedValue == service.id }
-    private var showsActions: Bool { showsHoverActions && (isHovering || forcesHover) }
+    private var showsActions: Bool { showsHoverActions && (isHovering || forcesHover || showsQRCode) }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -48,47 +51,13 @@ struct ServiceRow: View {
                     .help(service.domain.value)
             }
             .layoutPriority(1)
-            // Reserved even at rest, so revealing the actions never
-            // re-truncates the text or shifts the row under the pointer.
-            .padding(.trailing, reservedActionWidth)
 
             Spacer(minLength: 0)
 
-            PortPill(status: status)
+            trailingSlot
         }
         .padding(.horizontal, Theme.Metrics.rowPaddingH)
         .padding(.vertical, Theme.Metrics.rowPaddingV)
-        .overlay(alignment: .trailing) {
-            if showsActions {
-                HStack(spacing: 1) {
-                    if status.isActive {
-                        IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop") {
-                            Task { await state.stop(service) }
-                        }
-                        IconButton(symbol: "arrow.clockwise", help: "Restart") {
-                            Task { await state.restart(service) }
-                        }
-                    } else if !status.isTransitioning {
-                        IconButton(symbol: "play.fill", tint: Theme.success, help: "Start") {
-                            Task { await state.start(service) }
-                        }
-                    }
-                    if state.url(for: service) != nil {
-                        IconButton(symbol: "globe", help: "Open in browser") {
-                            if let url = state.url(for: service) { NSWorkspace.shared.open(url) }
-                        }
-                    }
-                    if let directory = service.directory {
-                        IconButton(symbol: "folder", help: "Reveal in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([directory])
-                        }
-                    }
-                }
-                .padding(3)
-                .background(ControlBackground(fill: Theme.cardHover))
-                .padding(.trailing, Theme.Metrics.portPillWidth + Theme.Metrics.rowPaddingH + 4)
-            }
-        }
         .background(CardBackground(fill: rowFill, border: borderColor))
         .contentShape(Rectangle())
         .onTapGesture { selection?.wrappedValue = service.id }
@@ -110,6 +79,54 @@ struct ServiceRow: View {
             Text(SharingWarning.exposure(.quick))
         }
         .opacity(status.isTransitioning ? 0.5 : 1)
+    }
+
+    /// On hover the actions take the port pill's place, so they never cover the
+    /// name or the domain. Both are always laid out in one slot as wide as the
+    /// wider of them, so the text beside it never re-truncates as the pointer
+    /// moves across rows.
+    private var trailingSlot: some View {
+        ZStack(alignment: .trailing) {
+            PortPill(status: status)
+                .opacity(showsActions ? 0 : 1)
+            if showsHoverActions {
+                actions
+                    .opacity(showsActions ? 1 : 0)
+                    .allowsHitTesting(showsActions)
+            }
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 1) {
+            if status.isActive {
+                IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop") {
+                    Task { await state.stop(service) }
+                }
+                IconButton(symbol: "arrow.clockwise", help: "Restart") {
+                    Task { await state.restart(service) }
+                }
+            } else if !status.isTransitioning {
+                IconButton(symbol: "play.fill", tint: Theme.success, help: "Start") {
+                    Task { await state.start(service) }
+                }
+            }
+            if let url = state.url(for: service) {
+                IconButton(symbol: "globe", help: "Open in browser") { NSWorkspace.shared.open(url) }
+                IconButton(symbol: "doc.on.doc", help: "Copy URL") { Pasteboard.copy(url.absoluteString) }
+            }
+            if let shared = state.publicURL(for: service) {
+                IconButton(symbol: "qrcode", help: "Open the public URL on your phone") { showsQRCode = true }
+                    .popover(isPresented: $showsQRCode, arrowEdge: .bottom) { QRCodeView(url: shared) }
+            }
+            if let directory = service.directory {
+                IconButton(symbol: "folder", help: "Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([directory])
+                }
+            }
+        }
+        .padding(3)
+        .background(ControlBackground(fill: Theme.cardHover))
     }
 
     private var isHighlighted: Bool { isHovering || showsActions }
@@ -135,10 +152,7 @@ struct ServiceRow: View {
         Divider()
         if let url = state.url(for: service) {
             Button("Open in Browser") { NSWorkspace.shared.open(url) }
-            Button("Copy URL") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(url.absoluteString, forType: .string)
-            }
+            Button("Copy URL") { Pasteboard.copy(url.absoluteString) }
         }
         if service.kind == .command { shareItems }
         if let directory = service.directory {
@@ -212,10 +226,7 @@ struct ServiceRow: View {
         if status.isRunning {
             Divider()
             if let url = state.publicURL(for: service) {
-                Button("Copy Public URL") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                }
+                Button("Copy Public URL") { Pasteboard.copy(url.absoluteString) }
                 Button("Stop Sharing") { Task { await state.unshare(service) } }
             } else if !tunnel.isTransitioning {
                 Button("Share Publicly…") { requestShare() }
@@ -230,13 +241,5 @@ struct ServiceRow: View {
         } else {
             confirmsShare = true
         }
-    }
-
-    /// A running service shows three actions, a stopped one shows two. Reserving
-    /// the larger width always would cost the domain twenty points of a
-    /// three-hundred point sidebar for nothing.
-    private var reservedActionWidth: CGFloat {
-        guard showsHoverActions else { return 0 }
-        return status.isActive ? Theme.Metrics.rowActionsWidth : Theme.Metrics.rowActionsWidth - 20
     }
 }
