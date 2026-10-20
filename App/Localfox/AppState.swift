@@ -117,8 +117,8 @@ final class AppState {
             // Caddy only holds a certificate for a domain that is in its route
             // table, so before anything runs there is no leaf and the evaluation
             // falls back to the root on its own.
-            let leaf = await ProxyLeafFetcher.leaf(for: host)
-            assign(\.trust, try TrustEvaluator.evaluate(rootPEM: pem, issuedLeaf: leaf, host: host))
+            let chain = await ProxyLeafFetcher.chain(for: host)
+            assign(\.trust, try TrustEvaluator.evaluate(rootPEM: pem, servedChain: chain, host: host))
             if let pem { cacheRootForDevServers(pem) }
         } catch {
             assign(\.trust, .notGenerated)

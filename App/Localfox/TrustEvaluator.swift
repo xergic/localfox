@@ -72,14 +72,14 @@ enum TrustEvaluator {
     }
 
     static func trustEvaluationPassed(
-        leaf: SecCertificate?,
+        servedChain: [SecCertificate],
         root: SecCertificate,
         host: String
     ) throws -> Bool {
         let certificates: CFTypeRef
         let policy: SecPolicy
-        if let leaf {
-            certificates = [leaf, root] as CFArray
+        if !servedChain.isEmpty {
+            certificates = (servedChain + [root]) as CFArray
             policy = SecPolicyCreateSSL(true, host as CFString)
         } else {
             // Until Caddy has issued a leaf, evaluating the root with a basic
@@ -98,7 +98,7 @@ enum TrustEvaluator {
 
     static func evaluate(
         rootPEM: Data?,
-        issuedLeaf: SecCertificate? = nil,
+        servedChain: [SecCertificate] = [],
         host: String
     ) throws -> RootCAStatus {
         let installed = try installedRoots()
@@ -113,7 +113,7 @@ enum TrustEvaluator {
         let parsedRoot = try parsePEM(rootPEM)
         let current = try identity(for: parsedRoot)
         let isTrusted = try trustEvaluationPassed(
-            leaf: issuedLeaf,
+            servedChain: servedChain,
             root: parsedRoot.certificate,
             host: host
         )
