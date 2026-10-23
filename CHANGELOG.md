@@ -2,7 +2,7 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.4.0] - 2026-10-23
 
 ### Added
 - A banner when a service you started is up while you are in another app. Click it to open the domain. It shares the existing notification preference, now called "Notify when a service is ready or crashes". Localfox still never sends a request of its own, so "ready" means the port is bound and the route is set.
