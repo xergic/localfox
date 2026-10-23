@@ -418,6 +418,7 @@ final class AppState {
         guard let project = projects.first(where: { $0.id == projectID }) else { return }
         await stopAll(project)
         save(projects.filter { $0.id != projectID })
+        preferences.pinnedProjectIDs.remove(projectID)
         Telemetry.send(.projectRemoved)
         project.services.forEach(forget)
         await syncProxy()

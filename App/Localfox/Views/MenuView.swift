@@ -17,7 +17,7 @@ struct MenuView: View {
     @State private var keyboardSelectionID: UUID?
 
     var body: some View {
-        let visible = state.projects.matching(query) { state.status(of: $0).port }
+        let visible = state.orderedProjects.matching(query) { state.status(of: $0).port }
         let ordered = visible.flatMap(\.services)
         let selectedID = selection(in: ordered)?.id
         VStack(spacing: 0) {
@@ -285,6 +285,12 @@ struct ProjectSection: View {
                     .font(.lfProject)
                     .foregroundStyle(Theme.primaryText)
                     .fixedSize()
+                if state.isPinned(project) {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.tertiaryText)
+                        .help("Pinned to the top")
+                }
                 // Hidden rather than squeezed while the actions are up. Reserving
                 // room for four buttons leaves a 300pt sidebar rendering
                 // `~/Work/Wishfox/wishfox-api` as `…i`, and the path is worth
@@ -346,6 +352,10 @@ struct ProjectSection: View {
                     Task { await state.startAll(project) }
                 }
             }
+            IconButton(
+                symbol: state.isPinned(project) ? "pin.slash" : "pin",
+                help: state.isPinned(project) ? "Unpin" : "Pin to top"
+            ) { state.togglePin(project) }
             if let directory = project.directory {
                 IconButton(symbol: "folder", help: "Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([directory])

@@ -53,6 +53,16 @@ final class Preferences {
     /// A banner when a service stops without being asked to.
     var notifiesCrashes: Bool { didSet { write(notifiesCrashes, Key.notifiesCrashes, oldValue) } }
 
+    /// Projects kept at the top of both lists. Here rather than on `Project`,
+    /// because the order of a list is the user's view, not a fact about the project.
+    var pinnedProjectIDs: Set<UUID> {
+        didSet {
+            guard pinnedProjectIDs != oldValue else { return }
+            defaults.set(pinnedProjectIDs.map(\.uuidString), forKey: Self.pinnedProjectsKey)
+        }
+    }
+    private static let pinnedProjectsKey = "projects.pinned"
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         for flag in [Key.rewriteHost, Key.warningAccepted, Key.recordsRequests, Key.sharesUsageData, Key.notifiesCrashes] {
@@ -63,6 +73,8 @@ final class Preferences {
         recordsRequests = defaults.bool(forKey: Key.recordsRequests.key)
         sharesUsageData = defaults.bool(forKey: Key.sharesUsageData.key)
         notifiesCrashes = defaults.bool(forKey: Key.notifiesCrashes.key)
+        let pinned = defaults.stringArray(forKey: Self.pinnedProjectsKey) ?? []
+        pinnedProjectIDs = Set(pinned.compactMap(UUID.init(uuidString:)))
     }
 
     private func write(_ value: Bool, _ flag: Flag, _ oldValue: Bool) {

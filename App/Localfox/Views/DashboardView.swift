@@ -134,7 +134,7 @@ struct DashboardContent: View {
                 // why the snapshot came out empty.
                 Scrollable(scrolls: scrolls) {
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(state.projects) { project in
+                        ForEach(state.orderedProjects) { project in
                             ProjectSection(
                                 project: project,
                                 selection: $selection,
