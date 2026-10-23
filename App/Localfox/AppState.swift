@@ -24,7 +24,7 @@ final class AppState {
     /// Owns registration and the XPC channel. Read through `helper`.
     let helperClient: HelperClient
     let lastResponses = LastResponses()
-    let crashNotifier = CrashNotifier()
+    let notifier = ServiceNotifier()
     let appearance = Appearance()
     let preferences = Preferences()
     let tunnelTargets = TunnelTargets()
@@ -528,8 +528,9 @@ final class AppState {
     }
 
     func setStatus(_ status: ServiceStatus, for serviceID: UUID) {
-        guard statuses[serviceID] != status else { return }
-        let wasRunning = statuses[serviceID]?.isRunning == true
+        let previous = statuses[serviceID]
+        guard previous != status else { return }
+        let wasRunning = previous?.isRunning == true
         // A stop reported by the runtime lands here after the project it belongs
         // to was already removed, and would otherwise leave a status keyed to a
         // service nothing can show. Below the cheap check, because this scan is
@@ -541,7 +542,7 @@ final class AppState {
             return
         }
         statuses[serviceID] = status
-        noteStatusChange(status, of: serviceID)
+        noteStatusChange(status, from: previous, of: serviceID)
         // A tunnel outliving the port it dials is the one failure this feature
         // must not have: cloudflared keeps serving 502s under a URL the user has
         // already sent to somebody. A restart counts, because the new process

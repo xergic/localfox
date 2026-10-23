@@ -5,6 +5,7 @@ Notable changes to Localfox. The format follows [Keep a Changelog](https://keepa
 ## [Unreleased]
 
 ### Added
+- A banner when a service you started is up while you are in another app. Click it to open the domain. It shares the existing notification preference, now called "Notify when a service is ready or crashes". Localfox still never sends a request of its own, so "ready" means the port is bound and the route is set.
 - Pin a project from the pin on its heading to keep it at the top of the popover and the Localfox window.
 - Search takes a port range such as `3000-3999` and finds every running service listening inside it.
 

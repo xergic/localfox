@@ -158,8 +158,8 @@ struct PreferencesSheet: View {
                 }
                 CardDivider()
                 PreferenceRow(
-                    title: "Notify when a service crashes",
-                    subtitle: "A banner with a Restart button when a server stops without you asking"
+                    title: "Notify when a service is ready or crashes",
+                    subtitle: "When it is up while you are in another app, or stops on its own"
                 ) {
                     Toggle("", isOn: Binding(
                         get: { state.preferences.notifiesCrashes },

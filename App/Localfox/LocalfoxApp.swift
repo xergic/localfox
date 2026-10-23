@@ -13,7 +13,7 @@ struct LocalfoxApp: App {
         let state = AppState()
         _state = State(initialValue: state)
         AppDelegate.state = state
-        state.crashNotifier.onRestart = { serviceID in
+        state.notifier.onRestart = { serviceID in
             guard let service = state.projects.lazy.flatMap(\.services).first(where: { $0.id == serviceID }) else { return }
             Task { await state.restart(service) }
         }
@@ -110,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         Telemetry.setEnabled(Preferences().sharesUsageData)
         guard let request = SnapshotRenderer.request else {
-            AppDelegate.state?.crashNotifier.activate()
+            AppDelegate.state?.notifier.activate()
             return
         }
         // Rendered offscreen and then exits, so no window is ever shown.
