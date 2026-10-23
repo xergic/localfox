@@ -2,6 +2,11 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Search takes a port range such as `3000-3999` and finds every running service listening inside it.
+
 ## [1.3.1] - 2026-10-20
 
 ### Fixed

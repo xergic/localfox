@@ -32,6 +32,14 @@ struct ProjectSearchTests {
         #expect(projects.matching("wishfox").first?.services.count == 2)
     }
 
+    @Test("a port range matches a running port inside it, ends included")
+    func portRangeMatch() {
+        let ports = { (service: Service) in service.name == "web" ? 5173 : nil }
+        #expect(projects.matching("5000-5173", port: ports).first?.services.map(\.name) == ["web"])
+        #expect(projects.matching("5000 - 6000", port: ports).first?.services.map(\.name) == ["web"])
+        #expect(projects.matching("6000-5000", port: ports).isEmpty)
+    }
+
     @Test("a port from the runtime matches")
     func portMatch() {
         let found = projects.matching("517") { $0.name == "web" ? 5173 : nil }
