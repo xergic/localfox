@@ -46,7 +46,8 @@ UI change and look at the PNGs.
 and run `make gen`.
 
 `Vendor/`, `snapshots/` and `dist/` are git-ignored. Never commit the Caddy binary,
-PNGs, or build output.
+PNGs, or build output. The one exception is `docs/images/`, the README's icon and
+its `--demo` popover screenshots, copied from `snapshots/popover-demo*.png`.
 
 ## Layout
 
