@@ -1,7 +1,26 @@
-# Localfox
+<p align="center">
+  <img src="docs/images/app-icon.png" width="128" height="128" alt="Localfox app icon">
+</p>
 
-A macOS menu bar app that starts your local development servers and serves them at
-stable, trusted HTTPS domains.
+<h1 align="center">Localfox</h1>
+
+<p align="center">
+  A macOS menu bar app that starts your local development servers<br>
+  and serves them at stable, trusted HTTPS domains.
+</p>
+
+<p align="center">
+  <a href="https://github.com/xergic/localfox/releases/latest">Download</a> ·
+  <a href="https://localfox.kandera.cz">Website</a> ·
+  <a href="https://github.com/xergic/portfox">Portfox</a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/popover-dark.png">
+    <img src="docs/images/popover-light.png" width="404" alt="The Localfox menu bar popover, listing services grouped by project, each at its own .localhost domain with its port or status">
+  </picture>
+</p>
 
 Instead of remembering which project owns which port, you open
 `https://wishfox.localhost`. Localfox detects the framework, the package manager and the
