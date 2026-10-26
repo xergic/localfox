@@ -21,7 +21,13 @@ enum SnapshotFixture {
         let grafana = Service.portRoute(name: "grafana", domain: LocalDomain("grafana.localhost")!, port: 3300, directory: nil)!
 
         let projects = [
-            Project(name: "wishfox", directory: home.appendingPathComponent("wishfox"), services: [web, api, admin]),
+            // A bundled PNG, because a real project icon is read from the project folder.
+            Project(
+                name: "wishfox",
+                directory: home.appendingPathComponent("wishfox"),
+                services: [web, api, admin],
+                iconPath: Bundle.main.path(forResource: "DemoProjectIcon", ofType: "png")
+            ),
             Project(name: "portfox-site", directory: home.appendingPathComponent("portfox-site"), services: [site, docs]),
             Project(name: "docker", directory: nil, services: [route, grafana]),
         ]
