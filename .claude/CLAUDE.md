@@ -245,6 +245,12 @@ its height. `card` is for contained elements only: detail cards, preference grou
 Group and section titles go through `groupLabelStyle()`. A status with no port
 (Stopped, Failed, Waiting) is plain tinted text in the port slot, not a pill.
 
+**Compact rows fall back per row, never by dropping content.** With "Compact rows"
+on, a row tries one line inside `ViewThatFits` and takes two when that line does
+not fit at its ideal width. The one-line variant is `fixedSize` horizontally, so it
+is never chosen and then squeezed into truncating the domain. The share badge is
+never dropped for room: a forgotten public tunnel is the failure it marks.
+
 **Text on an accent fill uses `onAccent`, never `background`.** Standing in
 `background` for it worked only while there was one appearance. `accent` is the
 brand fill; `accentText` is the accent as a glyph, darkened in light because the

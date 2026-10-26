@@ -111,14 +111,24 @@ struct PreferencesSheet: View {
     private var appearanceSection: some View {
         DetailCard(title: "Appearance") {
             @Bindable var appearance = state.appearance
-            PreferenceRow(
-                title: "Theme",
-                subtitle: "Follow the system theme, or pin Localfox to light or dark"
-            ) {
-                SegmentedControl(
-                    selection: $appearance.preference,
-                    options: AppAppearance.allCases.map { ($0, $0.displayName) }
-                )
+            @Bindable var preferences = state.preferences
+            VStack(alignment: .leading, spacing: Theme.Metrics.cardPaddingV) {
+                PreferenceRow(
+                    title: "Theme",
+                    subtitle: "Follow the system theme, or pin Localfox to light or dark"
+                ) {
+                    SegmentedControl(
+                        selection: $appearance.preference,
+                        options: AppAppearance.allCases.map { ($0, $0.displayName) }
+                    )
+                }
+                CardDivider()
+                PreferenceRow(
+                    title: "Compact rows",
+                    subtitle: "One line per service, so more fit before the list scrolls"
+                ) {
+                    PreferenceCheckbox(isOn: $preferences.compactRows)
+                }
             }
         }
     }

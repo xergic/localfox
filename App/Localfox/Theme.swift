@@ -108,6 +108,9 @@ enum Theme {
         static let listRowPaddingH: CGFloat = 8
         static let listRowPaddingV: CGFloat = 8
         static let compactRowPaddingV: CGFloat = 6
+
+        static func rowPaddingV(compact: Bool) -> CGFloat { compact ? compactRowPaddingV : listRowPaddingV }
+        static func rowIcon(compact: Bool) -> CGFloat { compact ? serviceIconCompact : serviceIcon }
         /// The list's own inset from the window edge, so the fill clears it.
         static let listInset: CGFloat = 6
         /// Where a row's text starts. Headers, search and footers line up on it.

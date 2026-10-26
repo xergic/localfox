@@ -29,6 +29,7 @@ final class Preferences {
         static let recordsRequests = Flag(key: "proxy.recordsRequests", defaultsTo: true)
         static let sharesUsageData = Flag(key: "telemetry.sharesUsageData", defaultsTo: true)
         static let notifiesCrashes = Flag(key: "notifications.crashes", defaultsTo: true)
+        static let compactRows = Flag(key: "appearance.compactRows", defaultsTo: false)
     }
 
     private let defaults: UserDefaults
@@ -53,6 +54,9 @@ final class Preferences {
     /// A banner when a service stops without being asked to.
     var notifiesCrashes: Bool { didSet { write(notifiesCrashes, Key.notifiesCrashes, oldValue) } }
 
+    /// One line per service in the popover and the dashboard sidebar.
+    var compactRows: Bool { didSet { write(compactRows, Key.compactRows, oldValue) } }
+
     /// Projects kept at the top of both lists. Here rather than on `Project`,
     /// because the order of a list is the user's view, not a fact about the project.
     var pinnedProjectIDs: Set<UUID> {
@@ -65,7 +69,7 @@ final class Preferences {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        for flag in [Key.rewriteHost, Key.warningAccepted, Key.recordsRequests, Key.sharesUsageData, Key.notifiesCrashes] {
+        for flag in [Key.rewriteHost, Key.warningAccepted, Key.recordsRequests, Key.sharesUsageData, Key.notifiesCrashes, Key.compactRows] {
             defaults.register(defaults: [flag.key: flag.defaultsTo])
         }
         rewritesHostHeader = defaults.bool(forKey: Key.rewriteHost.key)
@@ -73,6 +77,7 @@ final class Preferences {
         recordsRequests = defaults.bool(forKey: Key.recordsRequests.key)
         sharesUsageData = defaults.bool(forKey: Key.sharesUsageData.key)
         notifiesCrashes = defaults.bool(forKey: Key.notifiesCrashes.key)
+        compactRows = defaults.bool(forKey: Key.compactRows.key)
         let pinned = defaults.stringArray(forKey: Self.pinnedProjectsKey) ?? []
         pinnedProjectIDs = Set(pinned.compactMap(UUID.init(uuidString:)))
     }

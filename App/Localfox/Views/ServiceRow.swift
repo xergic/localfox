@@ -23,31 +23,23 @@ struct ServiceRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ServiceIconView(type: service.framework, isPortRoute: service.kind == .portRoute)
-            VStack(alignment: .leading, spacing: 1) {
-                // Beside the name, not the domain. A service name is a word, and
-                // beside the domain the badge truncated the one fact the row shows.
-                // A public tunnel the user has forgotten is the failure that
-                // matters here, so it is marked at rest and not behind hover.
-                // A name too long to sit beside the badge drops the badge to a
-                // line of its own rather than truncating the name.
-                if let shareLabel {
+            ServiceIconView(
+                type: service.framework,
+                isPortRoute: service.kind == .portRoute,
+                size: Theme.Metrics.rowIcon(compact: isCompact)
+            )
+            Group {
+                // A line that does not fit falls back to two for this row alone.
+                // `fixedSize` keeps the one line from being chosen and then
+                // squeezed, which would truncate the domain this row exists to show.
+                if isCompact {
                     ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 6) { nameText; shareBadge(shareLabel) }
-                        VStack(alignment: .leading, spacing: 3) { nameText; shareBadge(shareLabel) }
+                        oneLine.fixedSize(horizontal: true, vertical: false)
+                        twoLines
                     }
                 } else {
-                    nameText
+                    twoLines
                 }
-                Text(service.domain.value)
-                    .font(.lfSubtitle)
-                    .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(1)
-                    // Tail, not middle. The subdomain is what distinguishes
-                    // api.wishfox.localhost from admin.wishfox.localhost, and
-                    // middle truncation ate exactly that: "wishfo…calhost".
-                    .truncationMode(.tail)
-                    .help(service.domain.value)
             }
             .layoutPriority(1)
 
@@ -56,7 +48,7 @@ struct ServiceRow: View {
             trailingSlot
         }
         .padding(.horizontal, Theme.Metrics.listRowPaddingH)
-        .padding(.vertical, Theme.Metrics.listRowPaddingV)
+        .padding(.vertical, Theme.Metrics.rowPaddingV(compact: isCompact))
         .background(rowFill, in: .row)
         .contentShape(Rectangle())
         .onTapGesture { selection?.wrappedValue = service.id }
@@ -65,6 +57,48 @@ struct ServiceRow: View {
         }
         .contextMenu { menu }
         .opacity(status.isTransitioning ? 0.5 : 1)
+    }
+
+    private var isCompact: Bool { state.preferences.compactRows }
+
+    private var twoLines: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            // Beside the name, not the domain. A service name is a word, and
+            // beside the domain the badge truncated the one fact the row shows.
+            // A public tunnel the user has forgotten is the failure that
+            // matters here, so it is marked at rest and not behind hover.
+            // A name too long to sit beside the badge drops the badge to a
+            // line of its own rather than truncating the name.
+            if let shareLabel {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) { nameText; shareBadge(shareLabel) }
+                    VStack(alignment: .leading, spacing: 3) { nameText; shareBadge(shareLabel) }
+                }
+            } else {
+                nameText
+            }
+            domainText
+        }
+    }
+
+    private var oneLine: some View {
+        HStack(spacing: 6) {
+            nameText
+            domainText
+            if let shareLabel { shareBadge(shareLabel) }
+        }
+    }
+
+    private var domainText: some View {
+        Text(service.domain.value)
+            .font(.lfSubtitle)
+            .foregroundStyle(Theme.secondaryText)
+            .lineLimit(1)
+            // Tail, not middle. The subdomain is what distinguishes
+            // api.wishfox.localhost from admin.wishfox.localhost, and
+            // middle truncation ate exactly that: "wishfo…calhost".
+            .truncationMode(.tail)
+            .help(service.domain.value)
     }
 
     /// On hover the actions take the port pill's place, so they never cover the
