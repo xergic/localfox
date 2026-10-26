@@ -6,10 +6,10 @@ Project instructions for Localfox. Read `README.md` for the user-facing descript
 
 A macOS 15+ app that starts local development servers and exposes them at stable
 HTTPS `*.localhost` domains through a bundled Caddy reverse proxy. Swift 6, SwiftUI,
-strict concurrency. The app target links three third-party packages: TelemetryDeck,
-KeyboardShortcuts for the global shortcut, and MenuBarExtraAccess, because on macOS 27
+strict concurrency. The app target links four third-party packages: TelemetryDeck,
+KeyboardShortcuts for the global shortcut, MenuBarExtraAccess, because on macOS 27
 the `MenuBarExtra` status button has no target and nothing else can open the popover
-from code. The kit, the helper and the CLI depend on none of them. Sibling project to Portfox
+from code, and Sparkle for updates. The kit, the helper and the CLI depend on none of them. Sibling project to Portfox
 (`/Users/ondra/Work/Portfox/portfox`), whose conventions and design this follows.
 
 ## Commands
@@ -190,6 +190,18 @@ request itself. The opt-out is
 **The app ID is not in the source.** `Info.plist` carries `$(TELEMETRY_APP_ID)`, which
 only the release workflow sets, from the `TELEMETRY_APP_ID` repository variable. A fork
 or a local build has an empty ID and never starts the SDK.
+
+**The feed URL is not in the source either.** `SUFeedURL` is `$(SPARKLE_FEED_URL)`,
+which only the release workflow sets, so a local build or a fork never offers to
+replace itself with the release build. `Updater` creates no controller without it, or
+in a snapshot run. The Sparkle private key lives in the `SPARKLE_ED_PRIVATE_KEY`
+secret and reaches `generate_appcast` on stdin only.
+
+**An update asks before it stops services.** Quitting runs `stopEverything()`, and
+Sparkle quits the app to install, so `InstallGuard` holds the relaunch behind an alert
+while `runningCount > 0`. Later leaves everything running and keeps Sparkle's install
+handler, which installs once nothing runs. Dropping that handler stalls the update
+session until the app quits.
 
 ## Adding a framework detector
 
@@ -432,7 +444,23 @@ root. That is a CLI affordance only; the app has no such fallback.
 ## Releases
 
 Push a `vMAJOR.MINOR.PATCH` tag. `.github/workflows/release.yml` archives, signs with
-Developer ID, notarizes, staples, builds the DMG and publishes it.
+Developer ID, notarizes, staples, builds the DMG and publishes it. `CHANGELOG.md` must
+have a `## [X.Y.Z]` section first: it is the GitHub release body and the Sparkle release
+notes, and the job fails in its first minute without it.
+
+The release carries three assets: `Localfox-X.Y.Z.dmg`, a version-less `Localfox.dmg`
+that the site's `/download` redirect serves, and a one-item `appcast.xml` that
+`localfox.kandera.cz/appcast.xml` redirects to. Both go through
+`releases/latest/download/`, so a release never needs a site deploy. Appcast enclosures
+always use the versioned URL.
+
+**Test an upgrade before shipping it.** A `vX.Y.Z-rc.N` tag publishes a prerelease,
+which `releases/latest` skips and the `tap` job ignores. Point an installed build at it
+with `defaults write net.kandera.Localfox UpdateFeedOverride
+https://github.com/xergic/localfox/releases/download/vX.Y.Z-rc.N/appcast.xml`, which
+`InstallGuard` honours for `https` only, and delete the key afterwards. An update swaps
+the bundle under a running helper, so check the helper version, the proxy and the CA
+before tagging the final release.
 
 A second `tap` job then sets `version` and `sha256` in `Casks/localfox.rb` of
 `xergic/homebrew-tap` and pushes. It runs on its own runner with the

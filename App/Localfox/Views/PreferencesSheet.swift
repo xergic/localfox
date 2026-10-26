@@ -150,6 +150,10 @@ struct PreferencesSheet: View {
                         .font(.lfCaption)
                         .foregroundStyle(Theme.danger)
                 }
+                if Updater.shared.isAvailable {
+                    CardDivider()
+                    updateRows
+                }
                 CardDivider()
                 PreferenceRow(
                     title: "Open Localfox",
@@ -182,6 +186,21 @@ struct PreferencesSheet: View {
                     ))
                 }
             }
+        }
+    }
+
+    @ViewBuilder private var updateRows: some View {
+        @Bindable var updater = Updater.shared
+        PreferenceRow(
+            title: "Check for updates automatically",
+            subtitle: "Look for a new version once a day"
+        ) {
+            PreferenceCheckbox(isOn: $updater.automaticallyChecks)
+        }
+        CardDivider()
+        PreferenceRow(title: "Check for updates") {
+            ActionButton(title: "Check Now", symbol: "arrow.down.circle") { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
         }
     }
 

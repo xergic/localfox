@@ -10,12 +10,14 @@ permissions:
 env:
   HOMEBREW_NO_AUTO_UPDATE: 1
   HOMEBREW_NO_INSTALL_CLEANUP: 1
+  SPARKLE_FEED_URL: https://localfox.kandera.cz/appcast.xml
 
 jobs:
   release:
     runs-on: macos-26
     outputs:
       version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
       sha256: ${{ steps.publish.outputs.sha256 }}
     steps:
       # Pinned to a commit, not a moving major tag. This job holds the signing
@@ -38,12 +40,19 @@ jobs:
       - name: Derive the version from the tag
         id: version
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Tag $GITHUB_REF_NAME is not vMAJOR.MINOR.PATCH" >&2
+          tag="${GITHUB_REF_NAME#v}"
+          # An -rc tag publishes a prerelease, which releases/latest skips, so a
+          # signed upgrade can be tested before anyone is offered it.
+          if ! [[ "$tag" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-rc\.[0-9]+)?$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N" >&2
             exit 1
           fi
+          version="${BASH_REMATCH[1]}"
+          prerelease=false
+          [[ -n "${BASH_REMATCH[2]}" ]] && prerelease=true
+          Tools/release-notes.sh "$version" > "$RUNNER_TEMP/notes.md"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Import the Developer ID certificate
         env:
@@ -94,10 +103,12 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -archivePath "$RUNNER_TEMP/Localfox.xcarchive" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/packages" \
             -quiet \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             TELEMETRY_APP_ID="$TELEMETRY_APP_ID" \
+            SPARKLE_FEED_URL="$SPARKLE_FEED_URL" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
@@ -194,15 +205,44 @@ jobs:
           xcrun stapler validate "$DMG"
           spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
 
+      - name: Build the appcast
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          : "${SPARKLE_ED_PRIVATE_KEY:?set the SPARKLE_ED_PRIVATE_KEY repository secret}"
+          mkdir -p "$RUNNER_TEMP/feed"
+          ln "$DMG" "$RUNNER_TEMP/feed/"
+          # Named after the archive, which is how generate_appcast finds its notes.
+          gh api markdown -f mode=gfm -f text="$(cat "$RUNNER_TEMP/notes.md")" \
+            > "$RUNNER_TEMP/feed/Localfox-$VERSION.html"
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$RUNNER_TEMP/packages/artifacts/sparkle/Sparkle/bin/generate_appcast" \
+            --ed-key-file - \
+            --embed-release-notes \
+            --maximum-deltas 0 \
+            --download-url-prefix "https://github.com/xergic/localfox/releases/download/$GITHUB_REF_NAME/" \
+            "$RUNNER_TEMP/feed"
+          appcast="$RUNNER_TEMP/feed/appcast.xml"
+          grep -q 'sparkle:edSignature=' "$appcast"
+          grep -q "url=\"https://github.com/xergic/localfox/releases/download/$GITHUB_REF_NAME/Localfox-$VERSION.dmg\"" "$appcast"
+          echo "APPCAST=$appcast" >> "$GITHUB_ENV"
+          # The site's /download redirect needs a name that never changes.
+          ln "$DMG" "$RUNNER_TEMP/Localfox.dmg"
+
       - name: Publish the release
         id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "$DMG" \
+          flags=()
+          [[ "$PRERELEASE" == true ]] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" "$DMG" "$RUNNER_TEMP/Localfox.dmg" "$APPCAST" \
             --title "Localfox $VERSION" \
-            --generate-notes
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            "${flags[@]}"
           echo "sha256=$(shasum -a 256 "$DMG" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Remove the signing keychain
@@ -212,6 +252,7 @@ jobs:
   # A separate job so the tap token never shares a runner with the signing identity.
   tap:
     needs: release
+    if: needs.release.outputs.prerelease != 'true'
     runs-on: ubuntu-latest
     permissions: {}
     steps:

@@ -20,6 +20,16 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>TelemetryAppID</key>
 	<string>$(TELEMETRY_APP_ID)</string>
+	<key>SUFeedURL</key>
+	<string>$(SPARKLE_FEED_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string>g3YuKJdBXQOB1odD6MEGRUIOQB4cmSMjLxZmXM7Vps0=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>

@@ -110,7 +110,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         Telemetry.setEnabled(Preferences().sharesUsageData)
         guard let request = SnapshotRenderer.request else {
-            AppDelegate.state?.notifier.activate()
+            if let state = AppDelegate.state {
+                state.notifier.activate()
+                Updater.shared.start(delegate: InstallGuard(state: state))
+            }
             return
         }
         // Rendered offscreen and then exits, so no window is ever shown.

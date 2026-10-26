@@ -19,6 +19,9 @@ packages:
   MenuBarExtraAccess:
     url: https://github.com/orchetect/MenuBarExtraAccess
     from: 1.3.1
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
 
 settings:
   base:
@@ -88,6 +91,8 @@ targets:
         product: KeyboardShortcuts
       - package: MenuBarExtraAccess
         product: MenuBarExtraAccess
+      - package: Sparkle
+        product: Sparkle
       # `copy`, not `copyFiles`: the dependency key is different from the
       # sources one, and an unknown key is ignored silently, which lands the
       # helper in Contents/Resources where BundleProgram cannot find it.
