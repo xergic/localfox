@@ -2,6 +2,15 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-10-26
+
+### Added
+- Localfox updates itself. It checks for a new version once a day and shows what changed before you choose to install it. Installing quits Localfox, which stops the services it runs, so it asks first when any are running. Choose Later and the update installs once you have stopped them. Turn the daily check off, or check right away, in Settings › General. Installs from Homebrew keep working with `brew upgrade`.
+- "Compact rows" in Settings › Appearance puts each service on one line, so more fit before the list scrolls.
+
+### Changed
+- A quieter look across the menu, the Localfox window and Settings. Services sit in flat rows divided by hairlines instead of cards, with tighter spacing and smaller section titles.
+
 ## [1.4.0] - 2026-10-23
 
 ### Added
