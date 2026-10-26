@@ -59,16 +59,19 @@ struct LastResponsePill: View {
     var body: some View {
         if state.status(of: service).isRunning, let entry = state.lastResponses.entries[service.id] {
             Text(String(entry.status))
-                .font(.lfVersion)
-                .fontWeight(.semibold)
+                .font(.mono(10, .semibold))
                 .foregroundStyle(entry.statusClass.tint)
-                .frame(width: 38, height: 21)
+                .frame(width: Theme.Metrics.statusPillWidth, height: 16)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Metrics.badgeRadius, style: .continuous)
-                        .fill(entry.statusClass.tint.opacity(0.14))
+                        .fill(entry.statusClass.tint.opacity(0.16))
                 )
                 .help("Last request: \(entry.method) \(entry.uri) · \(entry.milliseconds) ms · "
                     + entry.timestamp.formatted(.relative(presentation: .named)))
+        } else if state.status(of: service).isRunning, state.preferences.recordsRequests {
+            // Held empty until the first request, so its arrival does not widen
+            // the slot and tip a compact row onto two lines.
+            Color.clear.frame(width: Theme.Metrics.statusPillWidth, height: 16)
         }
     }
 }

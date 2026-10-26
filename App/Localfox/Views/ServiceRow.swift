@@ -55,9 +55,9 @@ struct ServiceRow: View {
 
             trailingSlot
         }
-        .padding(.horizontal, Theme.Metrics.rowPaddingH)
-        .padding(.vertical, Theme.Metrics.rowPaddingV)
-        .background(CardBackground(fill: rowFill, border: borderColor))
+        .padding(.horizontal, Theme.Metrics.listRowPaddingH)
+        .padding(.vertical, Theme.Metrics.listRowPaddingV)
+        .background(rowFill, in: .row)
         .contentShape(Rectangle())
         .onTapGesture { selection?.wrappedValue = service.id }
         .onHover { hovering in
@@ -114,20 +114,13 @@ struct ServiceRow: View {
                 }
             }
         }
-        .padding(3)
-        .background(ControlBackground(fill: Theme.cardHover))
     }
 
     private var isHighlighted: Bool { isHovering || showsActions }
 
     private var rowFill: Color {
         if isSelected { return Theme.selectedRow }
-        return isHighlighted ? Theme.cardHover : Theme.card
-    }
-
-    private var borderColor: Color {
-        if isSelected { return Theme.selectedBorder }
-        return isHighlighted ? Theme.border : Theme.separator
+        return isHighlighted ? Theme.cardHover : .clear
     }
 
     @ViewBuilder
@@ -188,7 +181,6 @@ struct ServiceRow: View {
 
     private func shareBadge(_ label: String) -> some View {
         TintedBadge(text: label, tint: shareTint)
-            .fixedSize()
             .help(shareHelp)
     }
 

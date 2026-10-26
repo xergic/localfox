@@ -9,7 +9,7 @@ struct IconButton: View {
     var help: String = ""
     var symbolSize: CGFloat = 11
     var frameSize: CGFloat = 20
-    /// A round-rect fill behind the glyph, for a button that stands alone in a header.
+    /// A hover fill behind the glyph, for a button that stands alone in a header.
     var filled = false
     /// Spins the glyph only, so a filled button's background stays put.
     var spins = false
@@ -29,7 +29,9 @@ struct IconButton: View {
                 )
                 .frame(width: frameSize, height: frameSize)
                 .background {
-                    if filled { ControlBackground(isHovering: isHovering) }
+                    if filled, isHovering {
+                        RoundedRectangle.row.fill(Theme.cardHover)
+                    }
                 }
                 .contentShape(Rectangle())
         }
@@ -39,18 +41,17 @@ struct IconButton: View {
     }
 }
 
-/// The app icon, name and a subtitle, then a summary line and trailing buttons.
+/// The app icon and name, then a summary line and trailing buttons.
 /// The popover is too narrow to hold the summary beside the name, so it stacks it.
 struct AppHeader<Summary: View, Trailing: View>: View {
-    let subtitle: String
     var stacksSummary = false
     @ViewBuilder let summary: () -> Summary
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
         if stacksSummary {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) { identity; Spacer(); trailing() }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) { identity; Spacer(); trailing() }
                 summary()
             }
         } else {
@@ -64,17 +65,12 @@ struct AppHeader<Summary: View, Trailing: View>: View {
     }
 
     private var identity: some View {
-        HStack(spacing: 10) {
-            AppIconView(size: 34)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(AppInfo.name)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Theme.primaryText)
-                Text(subtitle)
-                    .font(.lfDetail)
-                    .foregroundStyle(Theme.secondaryText)
-            }
-            .lineLimit(1)
+        HStack(spacing: 8) {
+            AppIconView(size: 18)
+            Text(AppInfo.name)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.primaryText)
+                .lineLimit(1)
         }
     }
 }
@@ -143,10 +139,10 @@ struct SummaryCount: View {
         HStack(spacing: 5) {
             Circle().fill(dot).frame(width: 6, height: 6)
             Text(String(count))
-                .font(.lfDetailStrong)
+                .font(.lfCaption.weight(.semibold))
                 .foregroundStyle(Theme.primaryText)
             Text(label)
-                .font(.lfDetail)
+                .font(.lfCaption)
                 .foregroundStyle(Theme.secondaryText)
         }
         .fixedSize()
@@ -174,25 +170,32 @@ struct ControlBackground: View {
     }
 }
 
-/// A small sentence-case label washed in its own tint.
+/// A small uppercase label washed in its own tint.
 struct TintedBadge: View {
     let text: String
     let tint: Color
+    /// Off only where a long value beside fixed buttons must give way, such as
+    /// the project name in a detail header. Everywhere else a badge is a warning
+    /// or a role and must never be cut.
+    var fixesSize = true
 
     var body: some View {
         Text(text)
             .font(.lfBadge)
+            .lineLimit(1)
+            .fixedSize(horizontal: fixesSize, vertical: false)
+            .textCase(.uppercase)
+            .tracking(0.45)
             .foregroundStyle(tint)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
             .background(
-                RoundedRectangle(cornerRadius: Theme.Metrics.badgeRadius, style: .continuous).fill(tint.opacity(0.14))
+                RoundedRectangle(cornerRadius: Theme.Metrics.badgeRadius, style: .continuous).fill(tint.opacity(0.16))
             )
     }
 }
 
-/// A service's port while it runs, its state otherwise. Fixed width, so the
-/// hover actions can sit beside it without measuring it.
+/// A service's port while it runs, its state otherwise, as plain text.
 struct PortPill: View {
     let status: ServiceStatus
 
@@ -208,14 +211,13 @@ struct PortPill: View {
                 .font(.lfPort)
             } else {
                 Text(status.label)
-                    .font(.lfBadge)
+                    .font(.lfCaption.weight(.medium))
                     .foregroundStyle(status.tint)
             }
         }
         .lineLimit(1)
         .fixedSize()
-        .frame(width: Theme.Metrics.portPillWidth, height: 21)
-        .background(ControlBackground(fill: Theme.pill))
+        .frame(height: 21)
     }
 }
 
@@ -233,7 +235,7 @@ struct ActionButton: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 if let symbol {
-                    Image(systemName: symbol).font(.system(size: 11, weight: .medium))
+                    Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
                 }
                 Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
             }
@@ -251,8 +253,8 @@ extension View {
     /// The chrome an `ActionButton` wears, so anything that has to look like one
     /// without being one still changes with it.
     func actionChrome(isPrimary: Bool = false, isHovering: Bool = false) -> some View {
-        padding(.horizontal, 11)
-            .frame(height: Theme.Metrics.controlHeight)
+        padding(.horizontal, 9)
+            .frame(height: Theme.Metrics.controlHeightSmall)
             .background(ControlBackground(fill: isPrimary ? Theme.accent : Theme.card, isHovering: isHovering && !isPrimary))
     }
 }
@@ -400,4 +402,21 @@ private final class MenuActionTarget: NSObject {
     private let action: () -> Void
     init(_ action: @escaping () -> Void) { self.action = action }
     @objc func fire() { action() }
+}
+
+extension Shape where Self == RoundedRectangle {
+    /// The flat row's hover and selection fill, and anything sized to match it.
+    static var row: RoundedRectangle { RoundedRectangle(cornerRadius: Theme.Metrics.rowRadius, style: .continuous) }
+}
+
+/// The checkbox every setting uses, small so it sits level with a two-line label.
+struct PreferenceCheckbox: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle("", isOn: $isOn)
+            .labelsHidden()
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+    }
 }

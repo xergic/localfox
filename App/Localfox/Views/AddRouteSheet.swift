@@ -55,7 +55,7 @@ struct AddRouteSheet: View {
             Divider().overlay(Theme.separator)
             Scrollable(scrolls: scrolls) {
                 VStack(alignment: .leading, spacing: 14) {
-                    DetailCard(title: "Route", symbol: "arrow.left.arrow.right") {
+                    DetailCard(title: "Route") {
                         VStack(alignment: .leading, spacing: 8) {
                             LabelledField(label: "Name", text: $name)
                             LabelledField(label: "Domain", text: $domain, monospaced: true, error: domainError)

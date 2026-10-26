@@ -35,7 +35,7 @@ struct ServiceDetailPane: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             HStack(alignment: .top, spacing: 16) {
-                DetailCard(title: "Configuration", symbol: "slider.horizontal.3") {
+                DetailCard(title: "Configuration") {
                     VStack(alignment: .leading, spacing: 8) {
                         switch service.kind {
                         case .command:
@@ -54,7 +54,7 @@ struct ServiceDetailPane: View {
                         LabeledRow(label: "Port", value: portDescription, valueFont: .lfDetail)
                     }
                 }
-                DetailCard(title: "Status", symbol: "bolt.horizontal") {
+                DetailCard(title: "Status") {
                     VStack(alignment: .leading, spacing: 8) {
                         LabeledRow(label: "State", value: status.title, valueFont: .lfDetail, tint: status.tint)
                         CardDivider()
@@ -76,7 +76,7 @@ struct ServiceDetailPane: View {
             }
 
             if case let .waiting(port) = status {
-                DetailCard(title: "Waiting for the port", symbol: "hourglass") {
+                DetailCard(title: "Waiting for the port") {
                     Text(Self.explainWaiting(port: port))
                         .font(.lfDetail)
                         .foregroundStyle(Theme.secondaryText)
@@ -85,7 +85,7 @@ struct ServiceDetailPane: View {
             }
 
             if case let .failed(failure) = status {
-                DetailCard(title: "Why it failed", symbol: "exclamationmark.triangle") {
+                DetailCard(title: "Why it failed") {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(Self.explain(failure.reason))
                             .font(.lfDetail)
@@ -201,16 +201,14 @@ struct ServiceDetailPane: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             ServiceIconView(type: service.framework, isPortRoute: service.kind == .portRoute, size: Theme.Metrics.detailIcon)
-                .frame(width: Theme.Metrics.detailIconTile, height: Theme.Metrics.detailIconTile)
-                .background(CardBackground())
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(service.name)
-                        .font(.system(size: 17, weight: .bold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.primaryText)
-                    TintedBadge(text: "Project: \(project.name)", tint: Theme.secondaryText)
+                    TintedBadge(text: "Project: \(project.name)", tint: Theme.secondaryText, fixesSize: false)
                 }
                 Text("https://\(service.domain.value)")
                     .font(.lfSubtitle)
@@ -273,7 +271,7 @@ struct ServiceDetailPane: View {
     @ViewBuilder
     private var requestsCard: some View {
         let entries = state.requests(for: service)
-        DetailCard(title: "Requests", symbol: "arrow.left.arrow.right") {
+        DetailCard(title: "Requests") {
             if !state.preferences.recordsRequests {
                 Text("Turn on Record requests in Preferences to see traffic here.")
                     .font(.lfDetail)
@@ -300,7 +298,7 @@ struct ServiceDetailPane: View {
     @ViewBuilder
     private var logs: some View {
         let text = state.log(for: service)
-        DetailCard(title: "Output", symbol: "text.alignleft") {
+        DetailCard(title: "Output") {
             if text.isEmpty {
                 Text(status.isRunning ? "No output yet." : "Start the service to see its output.")
                     .font(.lfDetail)

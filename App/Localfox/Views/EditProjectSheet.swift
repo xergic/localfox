@@ -259,7 +259,7 @@ struct EditProjectSheet: View {
     }
 
     private var projectCard: some View {
-        DetailCard(title: "Project", symbol: "shippingbox") {
+        DetailCard(title: "Project") {
             VStack(alignment: .leading, spacing: 8) {
                 LabelledField(label: "Name", text: $projectName)
                     .onChange(of: projectName) { old, new in suggestDomains(from: old, to: new) }

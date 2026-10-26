@@ -111,7 +111,7 @@ struct AddProjectSheet: View {
     private func body(for scan: ProjectScan) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                DetailCard(title: "Project", symbol: "shippingbox") {
+                DetailCard(title: "Project") {
                     VStack(alignment: .leading, spacing: 8) {
                         LabelledField(label: "Name", text: $projectName)
                         CardDivider()
@@ -252,9 +252,7 @@ private struct ServiceEditor: View {
         ) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Toggle("", isOn: $candidate.isSelected)
-                        .toggleStyle(.checkbox)
-                        .labelsHidden()
+                    PreferenceCheckbox(isOn: $candidate.isSelected)
                     TextField("", text: $candidate.name)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13, weight: .semibold))

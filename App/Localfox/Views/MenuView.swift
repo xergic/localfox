@@ -22,7 +22,6 @@ struct MenuView: View {
         let selectedID = selection(in: ordered)?.id
         VStack(spacing: 0) {
             header
-            Divider().overlay(Theme.separator)
 
             if state.needsSetup {
                 setupWall
@@ -70,8 +69,9 @@ struct MenuView: View {
             focusesOnAppear: true,
             isLive: scrolls
         )
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
+        .padding(.horizontal, Theme.Metrics.contentInset)
+        .padding(.top, 2)
+        .padding(.bottom, 4)
     }
 
     private func handle(_ press: KeyPress, in ordered: [Service]) -> KeyPress.Result {
@@ -115,7 +115,7 @@ struct MenuView: View {
     }
 
     private var header: some View {
-        AppHeader(subtitle: "Local HTTPS domains", stacksSummary: true) {
+        AppHeader(stacksSummary: true) {
             if !state.needsSetup { ServiceSummary() }
         } trailing: {
             // The helper is approved in System Settings, outside this process,
@@ -136,7 +136,7 @@ struct MenuView: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, Theme.Metrics.contentInset)
         .padding(.top, 12)
         .padding(.bottom, 10)
     }
@@ -177,7 +177,7 @@ struct MenuView: View {
     private func list(_ projects: [Project], selectedID: UUID?) -> some View {
         ScrollViewReader { proxy in
             MeasuredScrollView(height: $listHeight, maximum: Theme.Metrics.maximumListHeight, scrolls: scrolls) {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     if let error = state.lastError {
                         ErrorBanner(message: error) { state.clearError() }
                     }
@@ -185,7 +185,8 @@ struct MenuView: View {
                         ProjectSection(project: project, forcesHover: forcesHover, keyboardSelectionID: selectedID)
                     }
                 }
-                .padding(12)
+                .padding(.horizontal, Theme.Metrics.listInset)
+                .padding(.vertical, 6)
             }
             .onChange(of: selectedID) {
                 guard let selectedID else { return }
@@ -195,11 +196,11 @@ struct MenuView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 14) {
-            FooterButton(symbol: "macwindow", title: "Localfox") {
+        HStack(spacing: 12) {
+            FooterButton(title: "Localfox") {
                 WindowPresenter.showDashboard(openWindow)
             }
-            FooterButton(symbol: "slider.horizontal.3", title: "Settings…") {
+            FooterButton(title: "Settings…") {
                 // Requested before the window has laid out, which is why the flag
                 // lives on `AppState` rather than in the dashboard's own state.
                 WindowPresenter.showDashboard(openWindow)
@@ -209,32 +210,31 @@ struct MenuView: View {
             Text(AppInfo.versionLabel)
                 .font(.lfVersion)
                 .foregroundStyle(Theme.tertiaryText)
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.plain)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.secondaryText)
+            FooterButton(title: "Quit", shortcut: "⌘Q") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Theme.Metrics.contentInset)
+        .padding(.vertical, 9)
     }
 }
 
 private struct FooterButton: View {
-    let symbol: String
     let title: String
+    var shortcut: String?
     let action: () -> Void
 
     @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: symbol)
+            HStack(spacing: 4) {
                 Text(title)
+                    .foregroundStyle(isHovering ? Theme.primaryText : Theme.secondaryText)
+                if let shortcut {
+                    Text(shortcut).foregroundStyle(Theme.tertiaryText)
+                }
             }
-            .font(.system(size: 12))
-            .foregroundStyle(isHovering ? Theme.primaryText : Theme.secondaryText)
+            .font(.lfCaption)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -266,7 +266,7 @@ struct ProjectSection: View {
     @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 9) {
                 ServiceIconView(
                     type: project.services.first?.framework ?? .unknown,
@@ -282,9 +282,10 @@ struct ProjectSection: View {
                         .offset(x: 2, y: 2)
                 }
                 Text(project.name)
-                    .font(.lfProject)
-                    .foregroundStyle(Theme.primaryText)
-                    .fixedSize()
+                    .groupLabelStyle()
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
                 if state.isPinned(project) {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 9))
@@ -295,27 +296,26 @@ struct ProjectSection: View {
                 // room for four buttons leaves a 300pt sidebar rendering
                 // `~/Work/Wishfox/wishfox-api` as `…i`, and the path is worth
                 // more at rest than under the pointer.
+                Spacer(minLength: 8)
                 if let displayPath = project.displayPath {
                     Text(displayPath)
                         .font(.lfSubtitle)
-                        .foregroundStyle(Theme.secondaryText)
+                        .foregroundStyle(Theme.tertiaryText)
                         .lineLimit(1)
                         .truncationMode(.head)
+                        .frame(minWidth: Theme.Metrics.pathMinWidth, alignment: .trailing)
                         .help(displayPath)
                         .opacity(showsActions ? 0 : 1)
                 }
-                Spacer(minLength: 0)
             }
-            // Bare on the background, because a card heading above cards would
-            // read as one more row.
-            .padding(4)
+            .padding(Theme.Metrics.groupHeaderInsets)
             .overlay(alignment: .trailing) {
                 if showsActions { headerActions }
             }
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
 
-            ForEach(project.services) { service in
+            RowList(project.services) { service in
                 ServiceRow(
                     service: service,
                     forcesHover: forcesHover,
@@ -368,7 +368,11 @@ struct ProjectSection: View {
                 IconButton(symbol: "trash", help: "Remove project") { isConfirmingRemove = true }
             }
         }
-        .padding(.trailing, Theme.Metrics.rowPaddingH)
+        // On the surface colour, so a long name running under the buttons is
+        // covered rather than drawn through them.
+        .padding(.leading, 6)
+        .background(Theme.background)
+        .padding(.trailing, Theme.Metrics.headerActionsInset)
     }
 
     private var showsActions: Bool { isHovering || forcesHover }
@@ -379,5 +383,32 @@ struct ProjectSection: View {
 
     private var anyActive: Bool {
         project.services.contains { state.status(of: $0).isActive }
+    }
+}
+
+/// Rows flat on the surface with a hairline between neighbours, never above the
+/// first. A row draws no card of its own, so this is the only thing that tells
+/// two rows apart at rest.
+struct RowList<Item: Identifiable, Row: View>: View {
+    let items: [Item]
+    @ViewBuilder let row: (Item) -> Row
+
+    init(_ items: [Item], @ViewBuilder row: @escaping (Item) -> Row) {
+        self.items = items
+        self.row = row
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(items) { item in
+                if item.id != items.first?.id {
+                    Rectangle()
+                        .fill(Theme.separator)
+                        .frame(height: 1)
+                        .padding(.horizontal, Theme.Metrics.listRowPaddingH)
+                }
+                row(item)
+            }
+        }
     }
 }

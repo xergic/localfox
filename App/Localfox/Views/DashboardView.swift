@@ -84,7 +84,7 @@ struct DashboardContent: View {
     }
 
     private var topBar: some View {
-        AppHeader(subtitle: "Local HTTPS domains") {
+        AppHeader {
             ServiceSummary()
         } trailing: {
             IconButton(
@@ -195,7 +195,7 @@ private struct SetupCard: View {
     @Environment(AppState.self) private var state
 
     var body: some View {
-        DetailCard(title: "Local HTTPS", symbol: "lock.shield") {
+        DetailCard(title: "Local HTTPS") {
             VStack(alignment: .leading, spacing: 10) {
                 LabeledRow(label: "Helper", value: helperText, valueFont: .lfDetail, tint: helperTint)
                 CardDivider()
@@ -335,7 +335,7 @@ private struct DiagnosticsCard: View {
     @State private var isExpanded = false
 
     var body: some View {
-        DetailCard(title: "Diagnostics", symbol: "stethoscope", isExpanded: $isExpanded) {
+        DetailCard(title: "Diagnostics", isExpanded: $isExpanded) {
             if let environment = state.shellEnvironment {
                 VStack(alignment: .leading, spacing: 8) {
                     LabeledRow(label: "Shell", value: environment.shell)
@@ -351,10 +351,11 @@ private struct DiagnosticsCard: View {
     }
 }
 
-/// A titled group of facts, wearing the same card fill, hairline and radius as
-/// a popover row.
+/// A titled group of facts, one step up from the surface.
 struct DetailCard<Content: View>: View {
     let title: String
+    /// Only where the glyph carries meaning, such as a candidate's checkmark in
+    /// Add Project. A decorative one beside every title was dropped.
     var symbol: String?
     /// When bound, the title row becomes a disclosure and the card collapses to
     /// its header, for a panel that is only wanted once something has gone wrong.
@@ -362,7 +363,7 @@ struct DetailCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if let isExpanded {
                 Button { isExpanded.wrappedValue.toggle() } label: {
                     titleRow(isOpen: isExpanded.wrappedValue)
@@ -385,9 +386,11 @@ struct DetailCard<Content: View>: View {
     private func titleRow(isOpen: Bool?) -> some View {
         HStack(spacing: 6) {
             if let symbol {
-                Image(systemName: symbol).foregroundStyle(Theme.tertiaryText)
+                Image(systemName: symbol)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(Theme.tertiaryText)
             }
-            Text(title).foregroundStyle(Theme.secondaryText)
+            Text(title).groupLabelStyle()
             if let isOpen {
                 Image(systemName: isOpen ? "chevron.down" : "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
@@ -395,7 +398,6 @@ struct DetailCard<Content: View>: View {
             }
             Spacer(minLength: 0)
         }
-        .font(.lfDetailStrong)
         .padding(.leading, 2)
         .contentShape(Rectangle())
     }

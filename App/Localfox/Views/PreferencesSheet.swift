@@ -23,22 +23,22 @@ struct PreferencesSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+        HStack(spacing: 8) {
+            RoundedRectangle.row
                 .fill(Theme.accent)
-                .frame(width: 36, height: 36)
+                .frame(width: 22, height: 22)
                 .overlay(
                     Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.onAccent)
                 )
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text("Localfox preferences")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.primaryText)
                 Text("Configure appearance, startup and sharing")
-                    .font(.lfDetail)
+                    .font(.lfCaption)
                     .foregroundStyle(Theme.secondaryText)
             }
 
@@ -52,7 +52,7 @@ struct PreferencesSheet: View {
             ) { dismiss() }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
     }
 
     private var sections: some View {
@@ -62,16 +62,16 @@ struct PreferencesSheet: View {
             proxySection
             sharingSection
         }
-        .padding(16)
+        .padding(14)
     }
 
     private var proxySection: some View {
-        DetailCard(title: "Proxy", symbol: "arrow.left.arrow.right") {
+        DetailCard(title: "Proxy") {
             PreferenceRow(
                 title: "Record requests",
                 subtitle: "Method, URL, status and duration. Headers and cookies are never recorded"
             ) {
-                Toggle("", isOn: Binding(
+                PreferenceCheckbox(isOn: Binding(
                     get: { state.preferences.recordsRequests },
                     // The proxy only learns about this through a route sync,
                     // so the write and the sync are one action.
@@ -80,42 +80,36 @@ struct PreferencesSheet: View {
                         Task { await state.syncProxy() }
                     }
                 ))
-                .labelsHidden()
-                .toggleStyle(.checkbox)
             }
         }
     }
 
     private var sharingSection: some View {
-        DetailCard(title: "Sharing", symbol: "antenna.radiowaves.left.and.right") {
+        DetailCard(title: "Sharing") {
             @Bindable var preferences = state.preferences
             VStack(alignment: .leading, spacing: Theme.Metrics.cardPaddingV) {
                 PreferenceRow(
                     title: "Rewrite the Host header",
                     subtitle: "Needed by Vite and Next, wrong for Django ALLOWED_HOSTS and OAuth"
                 ) {
-                    Toggle("", isOn: $preferences.rewritesHostHeader)
-                        .labelsHidden()
-                        .toggleStyle(.checkbox)
+                    PreferenceCheckbox(isOn: $preferences.rewritesHostHeader)
                 }
                 CardDivider()
                 PreferenceRow(
                     title: "Warn before sharing",
                     subtitle: "Ask what a public tunnel exposes each time one is opened"
                 ) {
-                    Toggle("", isOn: Binding(
+                    PreferenceCheckbox(isOn: Binding(
                         get: { !preferences.warningAccepted },
                         set: { preferences.warningAccepted = !$0 }
                     ))
-                    .labelsHidden()
-                    .toggleStyle(.checkbox)
                 }
             }
         }
     }
 
     private var appearanceSection: some View {
-        DetailCard(title: "Appearance", symbol: "paintbrush") {
+        DetailCard(title: "Appearance") {
             @Bindable var appearance = state.appearance
             PreferenceRow(
                 title: "Theme",
@@ -130,22 +124,20 @@ struct PreferencesSheet: View {
     }
 
     private var generalSection: some View {
-        DetailCard(title: "General", symbol: "gearshape") {
+        DetailCard(title: "General") {
             VStack(alignment: .leading, spacing: Theme.Metrics.cardPaddingV) {
                 PreferenceRow(
                     title: "Launch at login",
                     subtitle: "Start Localfox automatically when you log in"
                 ) {
-                    Toggle("", isOn: Binding(
+                    PreferenceCheckbox(isOn: Binding(
                         get: { launchAtLogin.isEnabled },
                         set: { launchAtLogin.set($0) }
                     ))
-                    .labelsHidden()
-                    .toggleStyle(.checkbox)
                 }
                 if let error = launchAtLogin.lastError {
                     Text(error)
-                        .font(.lfBadge)
+                        .font(.lfCaption)
                         .foregroundStyle(Theme.danger)
                 }
                 CardDivider()
@@ -161,27 +153,23 @@ struct PreferencesSheet: View {
                     title: "Notify when a service is ready or crashes",
                     subtitle: "When it is up while you are in another app, or stops on its own"
                 ) {
-                    Toggle("", isOn: Binding(
+                    PreferenceCheckbox(isOn: Binding(
                         get: { state.preferences.notifiesCrashes },
                         set: { state.preferences.notifiesCrashes = $0 }
                     ))
-                    .labelsHidden()
-                    .toggleStyle(.checkbox)
                 }
                 CardDivider()
                 PreferenceRow(
                     title: "Share anonymous usage data",
                     subtitle: "Never includes domains, paths or ports"
                 ) {
-                    Toggle("", isOn: Binding(
+                    PreferenceCheckbox(isOn: Binding(
                         get: { state.preferences.sharesUsageData },
                         set: { enabled in
                             state.preferences.sharesUsageData = enabled
                             Telemetry.setEnabled(enabled)
                         }
                     ))
-                    .labelsHidden()
-                    .toggleStyle(.checkbox)
                 }
             }
         }
@@ -206,11 +194,11 @@ private struct PreferenceRow<Control: View>: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.lfDetailStrong)
+                    .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(Theme.primaryText)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.lfBadge)
+                        .font(.lfCaption)
                         .foregroundStyle(Theme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -234,12 +222,12 @@ private struct SegmentedControl<Value: Hashable>: View {
                     selection = option.value
                 } label: {
                     Text(option.label)
-                        .font(.lfBadge)
+                        .font(.lfCaption.weight(.medium))
                         .foregroundStyle(option.value == selection ? Theme.onAccent : Theme.secondaryText)
-                        .padding(.horizontal, 10)
-                        .frame(height: Theme.Metrics.controlHeight - 8)
+                        .padding(.horizontal, 9)
+                        .frame(height: Theme.Metrics.controlHeightSmall - 4)
                         .background(
-                            RoundedRectangle(cornerRadius: Theme.Metrics.badgeRadius + 1, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.Metrics.controlRadius - 2, style: .continuous)
                                 .fill(option.value == selection ? Theme.accent : Color.clear)
                         )
                         .contentShape(Rectangle())
@@ -247,7 +235,7 @@ private struct SegmentedControl<Value: Hashable>: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(3)
+        .padding(2)
         .background(ControlBackground(fill: Theme.pill))
     }
 }
