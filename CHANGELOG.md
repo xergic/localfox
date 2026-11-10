@@ -2,6 +2,11 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Start asks before it runs a second copy of a server that is already running. When a server of yours, such as one a coding agent started with `pnpm dev`, runs in the service's folder, Localfox offers to route the domain to it. Route It serves the domain without starting anything and without saving anything. Stop only removes the route and never touches the server, and the service returns to stopped when the port stops answering. Start Another Copy starts the service as before.
+
 ## [1.5.0] - 2026-10-26
 
 ### Added

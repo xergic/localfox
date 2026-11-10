@@ -174,6 +174,20 @@ The configuration becomes a newer format once it holds a port route, or a servic
 folder. Localfox 1.2.0 cannot read that file and may overwrite it, so do not open it with
 1.2.0. Builds from this version on leave an unreadable file alone.
 
+### A server that is already running
+
+A coding agent often starts `pnpm dev` in your project before you press **Start**. Localfox
+looks for a server of yours that runs in the service's folder and that it did not start.
+If it finds one, it asks before it starts a second copy.
+
+**Route It** serves the service's domain from that server. Nothing starts and nothing is
+saved. **Stop** removes the domain and never signals the server. When the port stops
+answering, the service returns to stopped. **Start Another Copy** starts the service as usual.
+
+Localfox matches the folder of the server, or of the `pnpm` or `npm` that launched it. It
+ignores ports 80, 443 and above 49151. With several matches it takes the lowest port, or a
+higher one if only that one answers HTTP. It checks only your own processes.
+
 ## Requests
 
 Localfox can record what the proxy handled. Turn on **Record requests** in Preferences and

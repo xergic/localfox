@@ -36,6 +36,10 @@ actor ServiceRuntime {
 
     func log(for id: UUID) -> String { running[id]?.log.text ?? "" }
 
+    /// Every group Localfox spawned, which is how a server it started tells
+    /// itself apart from one somebody else did.
+    func ownedGroups() -> Set<pid_t> { Set(running.values.map(\.process.processGroup)) }
+
     // MARK: - Starting
 
     func start(_ service: Service, projectName: String) async {

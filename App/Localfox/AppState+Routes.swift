@@ -24,7 +24,7 @@ extension AppState {
         routeWatcher = watcher
         Task { [weak self] in
             for await event in watcher.events {
-                self?.setStatus(event.status, for: event.id)
+                await self?.handle(event)
             }
         }
     }
@@ -58,6 +58,7 @@ extension AppState {
         for service in removed { await stop(service) }
         let moved = edited.services.filter { service in
             service.kind == .command
+                && !isAdopted(service)
                 && previous?.service(id: service.id)?.domain != service.domain
                 && status(of: service).isRunning
         }

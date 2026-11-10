@@ -87,6 +87,10 @@ public struct ProcessInspector: Sendable {
         return written == size ? info : nil
     }
 
+    public func processGroup(pid: pid_t) -> pid_t? {
+        bsdInfo(pid: pid).map { pid_t($0.pbi_pgid) }
+    }
+
     /// Resident set size. Sampled on its own rather than as part of a snapshot,
     /// for the reason given on `ProcessSnapshot`.
     public func residentMemory(pid: pid_t) -> UInt64? {

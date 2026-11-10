@@ -203,8 +203,12 @@ public struct PortDiscovery: Sendable {
     /// inspector also listens. Any HTTP-shaped answer, including a 404 or a 500,
     /// settles it, so only a confirmed port is ever pushed to the proxy.
     public static func confirmHTTP(_ listener: DiscoveredListener, host: String) async -> Bool {
+        await answersHTTP(port: listener.port)
+    }
+
+    public static func answersHTTP(port: Int) async -> Bool {
         let probe = HTTPProbe(timeout: .milliseconds(800))
-        guard let url = URL(string: "http://127.0.0.1:\(listener.port)/") else { return false }
+        guard let url = URL(string: "http://127.0.0.1:\(port)/") else { return false }
         do {
             _ = try await probe.probe(url)
             return true

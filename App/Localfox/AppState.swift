@@ -48,12 +48,14 @@ final class AppState {
 
     private let store: ProjectStore
     private let resolver = ShellEnvironmentResolver()
-    private var runtime: ServiceRuntime?
+    private(set) var runtime: ServiceRuntime?
     /// Not private only because the sharing half of `AppState` lives in
     /// `AppState+Sharing.swift`. Nothing outside this type touches it.
     var tunnelRuntime: TunnelRuntime?
     /// Not private for the same reason as `tunnelRuntime`: `AppState+Routes.swift`.
     var routeWatcher: PortRouteWatcher?
+    /// Command services routed to a server Localfox did not start. Not private: `AppState+Adoption.swift`.
+    var adoptedServiceIDs: Set<UUID> = []
 
     init(store: ProjectStore = ProjectStore(), helperClient: HelperClient = HelperClient()) {
         self.store = store
@@ -309,6 +311,7 @@ final class AppState {
         switch service.kind {
         case .command:
             guard let runtime else { return }
+            if await routesToExistingServer(service) { return }
             await runtime.start(service, projectName: project.name)
         case .portRoute:
             guard let routeWatcher, let port = service.portMode.fixedValue else { return }
@@ -326,6 +329,7 @@ final class AppState {
     func stop(_ service: Service) async {
         await unshare(service)
         switch service.kind {
+        case .command where isAdopted(service): await endAdoption(of: service.id)
         case .command: await runtime?.stop(service)
         case .portRoute: await routeWatcher?.stop(id: service.id)
         }
@@ -335,6 +339,7 @@ final class AppState {
     /// process can bind a different port, so a tunnel carried across a restart
     /// would point at the old one.
     func restart(_ service: Service) async {
+        guard !isAdopted(service) else { return }
         if service.kind == .portRoute {
             await stop(service)
             await start(service)

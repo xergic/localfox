@@ -126,8 +126,10 @@ struct ServiceRow: View {
                 IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop") {
                     Task { await state.stop(service) }
                 }
-                IconButton(symbol: "arrow.clockwise", help: "Restart") {
-                    Task { await state.restart(service) }
+                if !state.isAdopted(service) {
+                    IconButton(symbol: "arrow.clockwise", help: "Restart") {
+                        Task { await state.restart(service) }
+                    }
                 }
             } else if !status.isTransitioning {
                 IconButton(symbol: "play.fill", tint: Theme.success, help: "Start") {
@@ -161,7 +163,9 @@ struct ServiceRow: View {
     private var menu: some View {
         if status.isActive {
             Button("Stop") { Task { await state.stop(service) } }
-            Button("Restart") { Task { await state.restart(service) } }
+            if !state.isAdopted(service) {
+                Button("Restart") { Task { await state.restart(service) } }
+            }
         } else {
             Button("Start") { Task { await state.start(service) } }
         }

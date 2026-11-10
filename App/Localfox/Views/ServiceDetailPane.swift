@@ -221,8 +221,10 @@ struct ServiceDetailPane: View {
                 ActionButton(title: "Stop", symbol: "stop.fill", tint: Theme.danger) {
                     Task { await state.stop(service) }
                 }
-                ActionButton(title: "Restart", symbol: "arrow.clockwise") {
-                    Task { await state.restart(service) }
+                if !state.isAdopted(service) {
+                    ActionButton(title: "Restart", symbol: "arrow.clockwise") {
+                        Task { await state.restart(service) }
+                    }
                 }
             } else {
                 ActionButton(title: "Start", symbol: "play.fill", isPrimary: true) {

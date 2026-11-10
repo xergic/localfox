@@ -396,6 +396,28 @@ never overwritten. That guard protects only builds from this version on, because
 **Routes draw `arrow.left.arrow.right`, and the header counts waiting separately.** A
 waiting route is not running and not failed, so folding it into either count misleads.
 
+## Adopted services
+
+Start on a `.command` service first looks for a server of the user's that already runs in
+the service's folder, such as one a coding agent started. `ExistingServerMatcher` is the
+pure rule and `ExistingServerFinder` reads the machine. A hit asks Route It, Start Another
+Copy or Cancel through an `NSAlert`, for the reason `confirmsPublicShare` gives.
+
+**An adopted service is a port route wearing a command service's row.** Route It adds the id
+to `adoptedServiceIDs` and starts `PortRouteWatcher`. Nothing is spawned or saved, and Stop
+only stops the watch, so no signal ever reaches a process Localfox did not start.
+
+**Adopted goes to stopped, not waiting.** A route to a closed port waits for it to return.
+The server here was somebody else's, so `handle(_:)` ends the adoption on the first
+`.waiting`. There is no Restart for it: a restart would spawn the second copy this exists to avoid.
+
+**The walk up from a listener stops at a bare shell or a terminal.** `ProcessRole.boundary`
+is the same rule `logicalRoot` uses. `zsh -c` is a wrapper and is walked through, which is
+how an agent's `claude` → `zsh -c` → `pnpm` → `node` chain still resolves to the project.
+
+**Localfox's own groups are excluded** by process group, so a service it started never
+reads as already running.
+
 ## Requests
 
 **Access logging is one file, not one per route.** Every entry carries its `Host`, so
