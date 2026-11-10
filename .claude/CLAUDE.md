@@ -426,6 +426,36 @@ how an agent's `claude` → `zsh -c` → `pnpm` → `node` chain still resolves 
 **Localfox's own groups are excluded** by process group, so a service it started never
 reads as already running.
 
+## Worktrees
+
+A registered project's linked git worktrees are discovered, never configured.
+`GitWorktreeReader` runs `git worktree list --porcelain` and `WorktreeServices` derives each
+worktree's services. `Worktrees` holds the result in memory and `AppState+Worktrees.swift` the
+lifecycle.
+
+**Discovery runs when a surface comes forward, never on a tick.** The popover's and the
+dashboard's `.task`, and the dashboard's `didBecomeActive`. Never on the status tick, and git is
+spawned off the main actor.
+
+**Domains are flat, `<project>-<branch>.localhost`.** Nested under the project's domain, a
+cookie for `wishfox.localhost` would reach every worktree, and a branch named `api` would take
+`api.wishfox.localhost`. The naming goes through `ProjectDomains.hosts` so the rule stays in one
+place.
+
+**A derived id is a hash of the parent id and the worktree path.** Status, the runtime, the
+proxy and tunnels key by service id, so a random id would orphan a running server on the next
+discovery.
+
+**A live worktree service keeps the value it started with.** `rederive` puts back every active
+or transitioning service as it was, domain included, even when its worktree is gone. Its own
+live domains are excluded from the clash check, or a running worktree would move to `-2` on the
+next open. Anything that iterates services for routing or lookups goes through `allServices` or
+`service(id:)`, never `projects` alone.
+
+**A server inside a nested worktree is not the project's own.** `ExistingServerMatcher` takes
+the worktree directories as exclusions, or Start on the main project would offer to route its
+domain to an agent's server in `.claude/worktrees/`.
+
 ## Requests
 
 **Access logging is one file, not one per route.** Every entry carries its `Host`, so

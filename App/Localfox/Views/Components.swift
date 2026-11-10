@@ -83,17 +83,18 @@ struct ServiceSummary: View {
 
     var body: some View {
         var (running, waiting, stopped, failed, shared) = (0, 0, 0, 0, 0)
-        for project in state.projects {
-            for service in project.services {
-                switch state.status(of: service) {
-                case .running: running += 1
-                case .waiting: waiting += 1
-                case .stopped: stopped += 1
-                case .failed: failed += 1
-                case .starting, .stopping: break
-                }
-                if state.tunnel(of: service).isLive { shared += 1 }
+        let worktreeIDs = Set(state.worktrees.services.map(\.id))
+        for service in state.allServices {
+            switch state.status(of: service) {
+            case .running: running += 1
+            case .waiting: waiting += 1
+            // An idle worktree is not a stopped service anybody set up.
+            case .stopped where worktreeIDs.contains(service.id): break
+            case .stopped: stopped += 1
+            case .failed: failed += 1
+            case .starting, .stopping: break
             }
+            if state.tunnel(of: service).isLive { shared += 1 }
         }
         return HStack(spacing: 10) {
             if running > 0 {

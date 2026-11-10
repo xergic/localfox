@@ -29,12 +29,23 @@ public enum ExistingServerMatcher {
         public let ownedGroups: Set<pid_t>
         /// Ports a route already serves.
         public let excludedPorts: Set<Int>
+        /// Resolved paths inside `directory` that belong to something else: a git
+        /// worktree nested at `.claude/worktrees/<name>` is another checkout, and
+        /// an agent's server there is not the project's own.
+        public let excludedDirectories: [String]
 
-        public init(directory: String, ownUID: uid_t, ownedGroups: Set<pid_t>, excludedPorts: Set<Int>) {
+        public init(
+            directory: String,
+            ownUID: uid_t,
+            ownedGroups: Set<pid_t>,
+            excludedPorts: Set<Int>,
+            excludedDirectories: [String] = []
+        ) {
             self.directory = directory
             self.ownUID = ownUID
             self.ownedGroups = ownedGroups
             self.excludedPorts = excludedPorts
+            self.excludedDirectories = excludedDirectories
         }
     }
 
@@ -52,7 +63,7 @@ public enum ExistingServerMatcher {
         where Service.isRoutablePort(socket.port) && socket.port < PortDiscovery.ephemeralFloor
             && !scope.excludedPorts.contains(socket.port) {
             guard let process = tree.process(socket.pid), process.uid == scope.ownUID,
-                  isInside(scope.directory, of: process, tree: tree)
+                  isInside(scope, of: process, tree: tree)
             else { continue }
             if let group = processGroup(socket.pid), scope.ownedGroups.contains(group) { continue }
             let server = ExistingServer(pid: process.pid, port: socket.port, executableName: process.executableName)
@@ -74,13 +85,19 @@ public enum ExistingServerMatcher {
     /// is what ran in the project and the `node` under it is what listens.
     /// Stops at a shell or a terminal, whose cwd is the user's session and says
     /// nothing about which project a server belongs to.
-    private static func isInside(_ directory: String, of listener: ProcessSnapshot, tree: ProcessTree) -> Bool {
-        if contains(directory, listener.workingDirectory) { return true }
+    private static func isInside(_ scope: Scope, of listener: ProcessSnapshot, tree: ProcessTree) -> Bool {
+        if let verdict = verdict(scope, listener.workingDirectory) { return verdict }
         for ancestor in tree.ancestors(of: listener.pid) {
             if ProcessRole.of(ancestor) == .boundary { return false }
-            if contains(directory, ancestor.workingDirectory) { return true }
+            if let verdict = verdict(scope, ancestor.workingDirectory) { return verdict }
         }
         return false
+    }
+
+    /// nil when the path is outside the folder and says nothing either way.
+    private static func verdict(_ scope: Scope, _ path: String?) -> Bool? {
+        guard contains(scope.directory, path) else { return nil }
+        return !scope.excludedDirectories.contains { contains($0, path) }
     }
 
     private static func contains(_ directory: String, _ path: String?) -> Bool {

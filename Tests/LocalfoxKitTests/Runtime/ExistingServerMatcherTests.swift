@@ -25,12 +25,16 @@ struct ExistingServerMatcherTests {
         _ sockets: [ListeningSocket],
         owned: Set<pid_t> = [],
         excludedPorts: Set<Int> = [],
+        excludedDirectories: [String] = [],
         groups: [pid_t: pid_t] = [:]
     ) -> [ExistingServer] {
         ExistingServerMatcher.servers(
             sockets: sockets,
             tree: ProcessTree(processes: processes),
-            scope: .init(directory: Self.project, ownUID: Self.uid, ownedGroups: owned, excludedPorts: excludedPorts),
+            scope: .init(
+                directory: Self.project, ownUID: Self.uid, ownedGroups: owned,
+                excludedPorts: excludedPorts, excludedDirectories: excludedDirectories
+            ),
             processGroup: { groups[$0] }
         )
     }
@@ -45,6 +49,18 @@ struct ExistingServerMatcherTests {
     @Test("a listener whose cwd is inside the folder matches")
     func cwdInside() {
         let found = match([Self.process(10, name: "node", cwd: Self.project + "/apps/web")], [Self.socket(10, 3000)])
+
+        #expect(found.map(\.port) == [3000])
+    }
+
+    @Test("a listener inside a nested worktree belongs to the worktree, not the project")
+    func nestedWorktreeIsExcluded() {
+        let worktree = Self.project + "/.claude/worktrees/fix-cart"
+        let processes = [
+            Self.process(10, name: "node", cwd: worktree),
+            Self.process(11, name: "node", cwd: Self.project)
+        ]
+        let found = match(processes, [Self.socket(10, 3001), Self.socket(11, 3000)], excludedDirectories: [worktree])
 
         #expect(found.map(\.port) == [3000])
     }

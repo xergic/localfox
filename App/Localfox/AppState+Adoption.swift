@@ -32,7 +32,8 @@ extension AppState {
         let found = await ExistingServerFinder().find(
             in: directory,
             excludingGroups: await runtime?.ownedGroups() ?? [],
-            excludingPorts: Set(statuses.values.compactMap(\.port))
+            excludingPorts: Set(statuses.values.compactMap(\.port)),
+            excludingDirectories: worktreeDirectories(of: service)
         )
         guard let found else { return false }
         switch ask(about: found, for: service) {

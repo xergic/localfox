@@ -79,7 +79,10 @@ struct DashboardContent: View {
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification
         )) { _ in
-            Task { await state.refreshSetup() }
+            Task {
+                await state.refreshSetup()
+                await state.refreshWorktrees()
+            }
         }
     }
 
@@ -137,6 +140,7 @@ struct DashboardContent: View {
                         ForEach(state.orderedProjects) { project in
                             ProjectSection(
                                 project: project,
+                                worktrees: state.worktrees.checkouts(for: project.id),
                                 selection: $selection,
                                 showsHoverActions: false,
                                 showsRemove: true,
@@ -168,7 +172,12 @@ struct DashboardContent: View {
                     ErrorBanner(message: error) { state.clearError() }
                 }
                 if let (project, service) = selected {
-                    ServiceDetailPane(service: service, project: project, scrolls: scrolls)
+                    ServiceDetailPane(
+                        service: service,
+                        project: project,
+                        worktreeLabel: state.worktrees.checkout(containing: service.id)?.label,
+                        scrolls: scrolls
+                    )
                 } else {
                     SetupCard()
                     DiagnosticsCard()
@@ -182,11 +191,9 @@ struct DashboardContent: View {
     }
 
     private var selected: (project: Project, service: Service)? {
-        guard let selection else { return nil }
-        for project in state.projects {
-            if let service = project.service(id: selection) { return (project, service) }
-        }
-        return nil
+        guard let selection, let service = state.service(id: selection),
+              let project = state.project(owning: selection) else { return nil }
+        return (project, service)
     }
 }
 

@@ -32,6 +32,16 @@ enum SnapshotFixture {
             Project(name: "docker", directory: nil, services: [route, grafana]),
         ]
         let failure = ServiceStatus.Failure(reason: .exited(code: 1), output: "")
+        let worktrees = [("fix/cart", "fix-cart"), ("agent/onboarding", "onboarding")].compactMap { branch, folder in
+            WorktreeServices.checkout(
+                of: projects[0],
+                in: GitWorktree(directory: home.appendingPathComponent("wishfox/.claude/worktrees/\(folder)"), branch: branch),
+                projectPath: "",
+                taken: Set(projects.flatMap(\.services).map(\.domain)),
+                directoryExists: { _ in true }
+            )
+        }
+        let worktreeWeb = worktrees.first?.services.first
 
         state.adoptFixture(
             projects,
@@ -42,10 +52,12 @@ enum SnapshotFixture {
                 docs.id: .failed(failure),
                 route.id: .running(pid: nil, port: 8081),
                 grafana.id: .waiting(port: 3300),
+                worktreeWeb?.id ?? UUID(): .running(pid: 4250, port: 3001),
             ],
             tunnels: [api.id: .live(URL(string: "https://example.trycloudflare.com")!)],
             logs: [api.id: apiLog]
         )
+        state.worktrees.adoptFixture([projects[0].id: worktrees])
         state.lastResponses.record(response(200, "/", "wishfox.localhost", ms: 18), for: web.id)
         state.lastResponses.record(response(500, "/wishlists", "api.wishfox.localhost", ms: 241), for: api.id)
         return (state, api.id)

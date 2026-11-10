@@ -15,11 +15,17 @@ public struct ExistingServerFinder: Sendable {
     public func find(
         in directory: URL,
         excludingGroups: Set<pid_t>,
-        excludingPorts: Set<Int>
+        excludingPorts: Set<Int>,
+        excludingDirectories: [URL] = []
     ) async -> ExistingServer? {
         let finder = self
         let candidates = await Task.detached {
-            finder.scan(in: directory.path, excludingGroups: excludingGroups, excludingPorts: excludingPorts)
+            finder.scan(
+                in: directory.path,
+                excludingGroups: excludingGroups,
+                excludingPorts: excludingPorts,
+                excludingDirectories: excludingDirectories.map { Self.resolved($0.path) }
+            )
         }.value
         // Every candidate at once, so a Start never waits out one timeout per port.
         // The HTTP request only when there is a choice to make.
@@ -42,7 +48,12 @@ public struct ExistingServerFinder: Sendable {
     }
 
     /// Blocking: one `lsof` sweep, one `sysctl`, and a few `proc_pidinfo` reads.
-    private func scan(in directory: String, excludingGroups: Set<pid_t>, excludingPorts: Set<Int>) -> [ExistingServer] {
+    private func scan(
+        in directory: String,
+        excludingGroups: Set<pid_t>,
+        excludingPorts: Set<Int>,
+        excludingDirectories: [String]
+    ) -> [ExistingServer] {
         guard let sockets = try? scanner.scan(), !sockets.isEmpty else { return [] }
         var tree = ProcessTree(processes: inspector.processSkeleton())
         // The skeleton has no cwd or executable. Read them for the listeners and
@@ -62,7 +73,8 @@ public struct ExistingServerFinder: Sendable {
                 directory: Self.resolved(directory),
                 ownUID: getuid(),
                 ownedGroups: excludingGroups,
-                excludedPorts: excludingPorts
+                excludedPorts: excludingPorts,
+                excludedDirectories: excludingDirectories
             ),
             processGroup: inspector.processGroup(pid:)
         )

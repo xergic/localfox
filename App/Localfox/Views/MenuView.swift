@@ -17,8 +17,12 @@ struct MenuView: View {
     @State private var keyboardSelectionID: UUID?
 
     var body: some View {
-        let visible = state.orderedProjects.matching(query) { state.status(of: $0).port }
-        let ordered = visible.flatMap(\.services)
+        let visible = state.sections(matching: query)
+        let ordered = visible.flatMap { section in
+            section.project.services + section.worktrees
+                .filter { !query.isEmpty || state.showsRows(of: $0) }
+                .flatMap(\.services)
+        }
         let selectedID = selection(in: ordered)?.id
         VStack(spacing: 0) {
             header
@@ -174,15 +178,21 @@ struct MenuView: View {
         return "Localfox needs its certificate authority trusted before HTTPS will work."
     }
 
-    private func list(_ projects: [Project], selectedID: UUID?) -> some View {
+    private func list(_ sections: [(project: Project, worktrees: [WorktreeCheckout])], selectedID: UUID?) -> some View {
         ScrollViewReader { proxy in
             MeasuredScrollView(height: $listHeight, maximum: Theme.Metrics.maximumListHeight, scrolls: scrolls) {
                 VStack(alignment: .leading, spacing: 10) {
                     if let error = state.lastError {
                         ErrorBanner(message: error) { state.clearError() }
                     }
-                    ForEach(projects) { project in
-                        ProjectSection(project: project, forcesHover: forcesHover, keyboardSelectionID: selectedID)
+                    ForEach(sections, id: \.project.id) { section in
+                        ProjectSection(
+                            project: section.project,
+                            worktrees: section.worktrees,
+                            forcesHover: forcesHover,
+                            keyboardSelectionID: selectedID,
+                            opensWorktrees: !query.isEmpty
+                        )
                     }
                 }
                 .padding(.horizontal, Theme.Metrics.listInset)
@@ -245,6 +255,7 @@ private struct FooterButton: View {
 /// A project heading and its services.
 struct ProjectSection: View {
     let project: Project
+    var worktrees: [WorktreeCheckout] = []
     var forcesHover = false
     /// Bound only by the dashboard. The popover has nowhere to show a detail
     /// pane, so it leaves this nil and rows stay unselectable.
@@ -259,6 +270,8 @@ struct ProjectSection: View {
     var showsEdit = false
     /// The popover's arrow-key selection, drawn like a selected row.
     var keyboardSelectionID: UUID?
+    /// While searching, so a matching worktree row is not hidden behind its heading.
+    var opensWorktrees = false
 
     @Environment(AppState.self) private var state
     @State private var isConfirmingRemove = false
@@ -271,7 +284,7 @@ struct ProjectSection: View {
                 ServiceIconView(
                     type: project.services.first?.framework ?? .unknown,
                     projectIconPath: state.iconPath(for: project),
-                    isPortRoute: project.services.allSatisfy { $0.kind == .portRoute },
+                    isPortRoute: !project.services.isEmpty && project.services.allSatisfy { $0.kind == .portRoute },
                     size: Theme.Metrics.projectIcon
                 )
                 .overlay(alignment: .bottomTrailing) {
@@ -324,6 +337,17 @@ struct ProjectSection: View {
                     isKeyboardSelected: service.id == keyboardSelectionID
                 )
             }
+
+            ForEach(worktrees) { checkout in
+                WorktreeSection(
+                    checkout: checkout,
+                    forcesHover: forcesHover,
+                    selection: selection,
+                    showsHoverActions: showsHoverActions,
+                    keyboardSelectionID: keyboardSelectionID,
+                    forcesOpen: opensWorktrees
+                )
+            }
         }
         .sheet(isPresented: $isEditing) {
             EditProjectSheet(project: project).environment(state)
@@ -345,11 +369,11 @@ struct ProjectSection: View {
         HStack(spacing: 1) {
             if anyActive {
                 IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop all") {
-                    Task { await state.stopAll(project) }
+                    Task { await state.stopAll(project.services) }
                 }
             } else {
                 IconButton(symbol: "play.fill", tint: Theme.success, help: "Start all") {
-                    Task { await state.startAll(project) }
+                    Task { await state.startAll(project.services) }
                 }
             }
             IconButton(
@@ -378,7 +402,7 @@ struct ProjectSection: View {
     private var showsActions: Bool { isHovering || forcesHover }
 
     private var anyRunning: Bool {
-        project.services.contains { state.status(of: $0).isRunning }
+        (project.services + worktrees.flatMap(\.services)).contains { state.status(of: $0).isRunning }
     }
 
     private var anyActive: Bool {

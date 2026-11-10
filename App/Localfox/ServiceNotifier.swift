@@ -118,10 +118,10 @@ extension AppState {
         if status.isRunning { notifier.askForPermissionOnce() }
         switch status {
         case let .failed(failure):
-            guard let service = project(owning: serviceID)?.service(id: serviceID) else { return }
+            guard let service = service(id: serviceID) else { return }
             notifier.post(failure, of: service)
         case .running where previous == .starting && !isMenuPresented && !NSApp.isActive:
-            guard let service = project(owning: serviceID)?.service(id: serviceID) else { return }
+            guard let service = service(id: serviceID) else { return }
             notifier.postReady(service)
         default:
             break

@@ -188,6 +188,36 @@ Localfox matches the folder of the server, or of the `pnpm` or `npm` that launch
 ignores ports 80, 443 and above 49151. With several matches it takes the lowest port, or a
 higher one if only that one answers HTTP. It checks only your own processes.
 
+## Worktrees
+
+Coding agents such as Claude Code and Codex often work in a git worktree, for example
+`.claude/worktrees/fix-cart` inside your project. Localfox finds a project's worktrees
+by itself and lists each one under the project, labelled with its branch. Nothing is
+added to your configuration, and a worktree you remove disappears from the list.
+
+A worktree runs the project's own services, with the same commands, in the worktree's
+folders. A service whose folder does not exist in the worktree is left out, and so are
+port routes. Each one gets its own domain next to the project's, never under it:
+
+| Project | Worktree on `fix/cart` |
+|---|---|
+| `wishfox.localhost` | `wishfox-fix-cart.localhost` |
+| `api.wishfox.localhost` | `api.wishfox-fix-cart.localhost` |
+
+A cookie set for `wishfox.localhost` does not reach a worktree this way, and a branch
+called `api` cannot take the project's own API domain. A worktree whose domains are
+already taken gets `-2`, `-3` and so on.
+
+Worktree services always pick their port automatically, because a fixed port would clash
+with the main checkout. Environment overrides set on a service are copied, and any value
+that names one of the project's domains is pointed at the worktree's domain instead.
+
+**Start**, **Stop**, **Open** and **Copy URL** work as on any service, and so does a quick
+share. To change a worktree's services, edit the project. A worktree is closed to one line
+until you open it or something in it runs. Localfox looks for worktrees when the menu or
+the Localfox window opens. A server that is running when its worktree is removed stays on
+screen until you stop it.
+
 ## Requests
 
 Localfox can record what the proxy handled. Turn on **Record requests** in Preferences and
@@ -282,6 +312,12 @@ Only the official release builds report. The TelemetryDeck app ID is injected by
   password-protect it. Use a named tunnel for an address you control.
 - A named tunnel needs a service with a fixed port, because Cloudflare owns the origin.
 - A shared address is public for as long as the share is open, in every mode.
+- A worktree uses the `.env` files in its own folder as they are. Localfox rewrites the
+  project's domains only in the overrides it stores, so a URL written in a `.env` file
+  still points at the main checkout's domain.
+- A worktree service picks its port automatically. A server that does not move to a free
+  port by itself, such as Django's `runserver`, fails while the main checkout holds its
+  default port.
 - Only Next.js and Vite have verified HMR behaviour behind the proxy. Other frameworks are
   detected but not yet proven end to end.
 

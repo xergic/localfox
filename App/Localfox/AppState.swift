@@ -28,6 +28,7 @@ final class AppState {
     let appearance = Appearance()
     let preferences = Preferences()
     let tunnelTargets = TunnelTargets()
+    let worktrees = Worktrees()
 
     /// Held here rather than in the dashboard's own state, because the popover
     /// asks for the sheet on a window that does not exist yet.
@@ -143,9 +144,7 @@ final class AppState {
     /// Prefers a running service, because that is the only host the proxy has
     /// actually been asked to issue for.
     private var trustProbeHost: String {
-        let running = projects
-            .flatMap(\.services)
-            .first { status(of: $0).isRunning }
+        let running = allServices.first { status(of: $0).isRunning }
         return running?.domain.value
             ?? projects.first?.services.first?.domain.value
             ?? "localfox.localhost"
@@ -263,16 +262,14 @@ final class AppState {
     func syncProxy() async {
         guard helperClient.state.canServe else { return }
         var routes: [ProxyRoute] = []
-        for project in projects {
-            for service in project.services {
-                guard let port = status(of: service).port,
-                      let route = ProxyRoute(
-                          id: String(service.id.uuidString.prefix(8)),
-                          domain: service.domain,
-                          port: port
-                      ) else { continue }
-                routes.append(route)
-            }
+        for service in allServices {
+            guard let port = status(of: service).port,
+                  let route = ProxyRoute(
+                      id: String(service.id.uuidString.prefix(8)),
+                      domain: service.domain,
+                      port: port
+                  ) else { continue }
+            routes.append(route)
         }
         do {
             try await helperClient.setRoutes(routes, recordsRequests: preferences.recordsRequests)
@@ -350,17 +347,17 @@ final class AppState {
         await runtime.restart(service, projectName: project.name)
     }
 
-    func startAll(_ project: Project) async {
-        for service in project.services { await start(service) }
+    func startAll(_ services: [Service]) async {
+        for service in services { await start(service) }
     }
 
     /// Concurrent, unlike `startAll`. Each service has its own process group, so
     /// nothing serialises them, and `terminate` escalates SIGINT to SIGKILL over
     /// six seconds for one unresponsive server. Sequentially that is six seconds
     /// per service with the interface waiting on all of them.
-    func stopAll(_ project: Project) async {
+    func stopAll(_ services: [Service]) async {
         await withTaskGroup(of: Void.self) { group in
-            for service in project.services {
+            for service in services {
                 group.addTask { await self.stop(service) }
             }
         }
@@ -391,7 +388,7 @@ final class AppState {
     }
 
     func project(owning serviceID: UUID) -> Project? {
-        projects.first { $0.services.contains { $0.id == serviceID } }
+        projects.first { $0.services.contains { $0.id == serviceID } } ?? worktreeParent(of: serviceID)
     }
 
     // MARK: - Status
@@ -421,11 +418,13 @@ final class AppState {
     /// started it with no way to stop it short of quitting Localfox.
     func remove(projectID: UUID) async {
         guard let project = projects.first(where: { $0.id == projectID }) else { return }
-        await stopAll(project)
+        // Its worktrees too: once the project is gone they have no heading to be stopped from.
+        let services = project.services + worktrees.checkouts(for: projectID).flatMap(\.services)
+        await stopAll(services)
         save(projects.filter { $0.id != projectID })
         preferences.pinnedProjectIDs.remove(projectID)
         Telemetry.send(.projectRemoved)
-        project.services.forEach(forget)
+        services.forEach(forget)
         await syncProxy()
     }
 
@@ -494,18 +493,13 @@ final class AppState {
     /// project would otherwise clash against the sibling's saved value, which is
     /// about to be overwritten by the same save.
     func domainOwner(of domain: LocalDomain, excluding serviceIDs: Set<UUID>) -> Service? {
-        for project in projects {
-            for service in project.services
-            where service.domain == domain && !serviceIDs.contains(service.id) {
-                return service
-            }
-        }
-        return nil
+        allServices.first { $0.domain == domain && !serviceIDs.contains($0.id) }
     }
 
     private func save(_ updated: [Project]) {
         let previous = projects
         assign(\.projects, updated)
+        rederiveWorktrees()
         Task { [store] in
             do {
                 try await store.save(updated)

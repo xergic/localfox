@@ -6,6 +6,7 @@ import SwiftUI
 struct ServiceDetailPane: View {
     let service: Service
     let project: Project
+    var worktreeLabel: String?
     var scrolls = true
 
     @Environment(AppState.self) private var state
@@ -209,6 +210,9 @@ struct ServiceDetailPane: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.primaryText)
                     TintedBadge(text: "Project: \(project.name)", tint: Theme.secondaryText, fixesSize: false)
+                    if let worktreeLabel {
+                        TintedBadge(text: "Worktree: \(worktreeLabel)", tint: Theme.secondaryText, fixesSize: false)
+                    }
                 }
                 Text("https://\(service.domain.value)")
                     .font(.lfSubtitle)

@@ -29,7 +29,7 @@ extension AppState {
     /// by host, so each call reads one line of one route.
     func refreshLastResponses() async {
         guard preferences.recordsRequests, helperClient.state.canServe else { return }
-        for service in projects.flatMap(\.services) where status(of: service).isRunning {
+        for service in allServices where status(of: service).isRunning {
             let host = service.domain.value
             guard let tail = try? await helperClient.accessLog(host: host, lines: 1) else { continue }
             lastResponses.record(AccessLogEntry.parse(tail: tail, host: host, limit: 1).last, for: service.id)

@@ -14,7 +14,7 @@ struct LocalfoxApp: App {
         _state = State(initialValue: state)
         AppDelegate.state = state
         state.notifier.onRestart = { serviceID in
-            guard let service = state.projects.lazy.flatMap(\.services).first(where: { $0.id == serviceID }) else { return }
+            guard let service = state.service(id: serviceID) else { return }
             Task { await state.restart(service) }
         }
         KeyboardShortcuts.onKeyUp(for: .togglePopover) {
@@ -29,7 +29,10 @@ struct LocalfoxApp: App {
         MenuBarExtra {
             MenuView()
                 .environment(state)
-                .task { await state.load() }
+                .task {
+                    await state.load()
+                    await state.refreshWorktrees()
+                }
         } label: {
             MenuBarLabel(runningCount: state.runningCount)
         }
@@ -45,7 +48,10 @@ struct LocalfoxApp: App {
             DashboardView()
                 .environment(state)
                 .frame(minWidth: 900, minHeight: 620)
-                .task { await state.load() }
+                .task {
+                    await state.load()
+                    await state.refreshWorktrees()
+                }
         }
         .defaultSize(width: Theme.Metrics.dashboardWidth, height: Theme.Metrics.dashboardHeight)
         .defaultPosition(.center)
