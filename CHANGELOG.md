@@ -2,12 +2,14 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.6.0] - 2026-11-10
 
 ### Added
 - Start asks before it runs a second copy of a server that is already running. When a server of yours, such as one a coding agent started with `pnpm dev`, runs in the service's folder, Localfox offers to route the domain to it. Route It serves the domain without starting anything and without saving anything. Stop only removes the route and never touches the server, and the service returns to stopped when the port stops answering. Start Another Copy starts the service as before.
 - A project's git worktrees appear under it, labelled with their branch, so a worktree a coding agent made in `.claude/worktrees/` runs without being added as a project. Each runs the project's services at its own domain, such as `wishfox-fix-cart.localhost` and `api.wishfox-fix-cart.localhost`, always on an automatic port. Environment overrides that name the project's domains point at the worktree's. Nothing is saved, and a removed worktree disappears once nothing in it runs.
-- Every server Localfox starts carries `LOCALFOX_ID` in its environment. Stop uses it to find and stop a process that daemonized and left its process group, which used to keep running and hold the port. Portfox reads the `LOCALFOX_HOST` Localfox already set, and shows those servers by their domain.
+
+### Fixed
+- Stop also stops a process that daemonized and left its process group. It used to keep running and hold the port. Every server Localfox starts now carries `LOCALFOX_ID` in its environment, which is how Stop finds it. Portfox 1.7 shows Localfox servers by their domain.
 
 ## [1.5.0] - 2026-10-26
 
