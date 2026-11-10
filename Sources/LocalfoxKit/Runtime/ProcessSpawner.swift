@@ -166,6 +166,35 @@ public enum ProcessSpawner {
         return .killed
     }
 
+    /// Stops processes that left the group, one pid at a time. They are no
+    /// longer this process's children, so there is nothing to reap, and the
+    /// escalation is the same as for the group.
+    ///
+    /// Each one is checked before every signal: the same pid and start time,
+    /// still carrying the tag. A tagged process that exits during the grace
+    /// period frees its pid, and the kernel can hand it to anything of the user's.
+    public static func terminate(
+        tagged id: String,
+        _ processes: [ProcessSnapshot],
+        inspector: ProcessInspector = ProcessInspector(),
+        grace: Duration = .seconds(3)
+    ) async {
+        func stillTagged(_ process: ProcessSnapshot) -> Bool {
+            process.pid > 1 && process.pid != getpid()
+                && inspector.isSameProcessAlive(process) && inspector.carries(id, pid: process.pid)
+        }
+        var alive = processes.filter(stillTagged)
+        guard !alive.isEmpty else { return }
+        for process in alive { kill(process.pid, SIGTERM) }
+
+        let deadline = ContinuousClock.now.advanced(by: grace)
+        while !alive.isEmpty, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+            alive = alive.filter(stillTagged)
+        }
+        for process in alive.filter(stillTagged) { kill(process.pid, SIGKILL) }
+    }
+
     /// Why a reaped child ended, from its raw `waitpid` status. Swift does not
     /// import `WIFEXITED` and friends, which are C macros.
     public static func failureReason(waitStatus status: Int32) -> ServiceStatus.Failure.Reason {

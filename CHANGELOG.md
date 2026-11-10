@@ -6,6 +6,7 @@ Notable changes to Localfox. The format follows [Keep a Changelog](https://keepa
 
 ### Added
 - Start asks before it runs a second copy of a server that is already running. When a server of yours, such as one a coding agent started with `pnpm dev`, runs in the service's folder, Localfox offers to route the domain to it. Route It serves the domain without starting anything and without saving anything. Stop only removes the route and never touches the server, and the service returns to stopped when the port stops answering. Start Another Copy starts the service as before.
+- Every server Localfox starts carries `LOCALFOX_ID` in its environment. Stop uses it to find and stop a process that daemonized and left its process group, which used to keep running and hold the port. Portfox reads the `LOCALFOX_HOST` Localfox already set, and shows those servers by their domain.
 
 ## [1.5.0] - 2026-10-26
 

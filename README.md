@@ -272,7 +272,9 @@ Only the official release builds report. The TelemetryDeck app ID is injected by
   HMR socket will not connect.
 - A dev server bound to `0.0.0.0` is already reachable from your LAN regardless of what
   Localfox does. Localfox flags this rather than claiming otherwise.
-- A process that daemonizes and escapes its process group cannot be attributed or stopped.
+- A process that daemonizes and escapes its process group is still stopped, because every
+  server carries `LOCALFOX_ID` and Stop sweeps for it. One that clears its environment, or
+  runs an Apple platform binary whose environment macOS withholds, cannot be found that way.
 - Cloudflare quick tunnels do not support Server-Sent Events, and cap at 200 concurrent
   in-flight requests. WebSocket HMR works over a quick share; an SSE-based reload does not.
   A named tunnel lifts both, and needs a Cloudflare account with a domain.

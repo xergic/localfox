@@ -102,7 +102,9 @@ actor ServiceRuntime {
             "LOCALFOX_URL": "https://\(service.domain.value)",
             "LOCALFOX_HOST": service.domain.value,
             "LOCALFOX_PROJECT": projectName,
-            "LOCALFOX_SERVICE": service.name
+            "LOCALFOX_SERVICE": service.name,
+            // What Stop finds a server by once it has left its process group.
+            "LOCALFOX_ID": service.id.uuidString
         ]
         if let expected = service.portMode.fixedValue ?? service.expectedPort {
             variables["LOCALFOX_PORT"] = String(expected)
@@ -147,7 +149,7 @@ actor ServiceRuntime {
         running[id] = nil
         record.discovery?.cancel()
         // A child the leader left behind would otherwise keep the port.
-        _ = await ProcessSpawner.terminate(group: record.process.processGroup)
+        await terminate(record, id: id)
         onStatus(id, .failed(.init(reason: reason, output: String(record.log.text.suffix(2_000)))))
     }
 
@@ -192,7 +194,15 @@ actor ServiceRuntime {
     private func abandon(_ id: UUID) async {
         guard let record = running.removeValue(forKey: id) else { return }
         record.drain?.cancel()
+        await terminate(record, id: id)
+    }
+
+    /// The group first, then anything still tagged with the service's id, which
+    /// is a process that called `setsid` and left the group behind.
+    private func terminate(_ record: Running, id: UUID) async {
         _ = await ProcessSpawner.terminate(group: record.process.processGroup)
+        let tag = id.uuidString
+        await ProcessSpawner.terminate(tagged: tag, ProcessInspector().processes(taggedWith: tag))
     }
 
     private func report(_ status: ServiceStatus, for id: UUID) {
@@ -208,7 +218,7 @@ actor ServiceRuntime {
 
         record.discovery?.cancel()
         record.drain?.cancel()
-        _ = await ProcessSpawner.terminate(group: record.process.processGroup)
+        await terminate(record, id: service.id)
 
         running[service.id] = nil
         onStatus(service.id, .stopped)
@@ -226,7 +236,7 @@ actor ServiceRuntime {
             running[id]?.isStopping = true
             record.discovery?.cancel()
             record.drain?.cancel()
-            _ = await ProcessSpawner.terminate(group: record.process.processGroup)
+            await terminate(record, id: id)
             running[id] = nil
             onStatus(id, .stopped)
         }

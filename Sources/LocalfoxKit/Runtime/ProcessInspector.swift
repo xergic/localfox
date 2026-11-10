@@ -141,6 +141,41 @@ public struct ProcessInspector: Sendable {
         return Array(buffer.prefix(size))
     }
 
+    /// This user's processes whose environment carries `LOCALFOX_ID=<id>`.
+    ///
+    /// The process group is the first way Stop finds a server, and this is the
+    /// second. A server that daemonizes calls `setsid` and leaves the group, but
+    /// it keeps the environment it was started with. One `sysctl` per process of
+    /// this user, which is fine on a Stop and would not be on a timer.
+    ///
+    /// Snapshots, not bare pids, so every signal can check it still has the
+    /// same process in front of it.
+    public func processes(taggedWith id: String) -> [ProcessSnapshot] {
+        let me = getpid()
+        let owner = getuid()
+        return processSkeleton().filter { process in
+            process.uid == owner && process.pid != me && carries(id, pid: process.pid)
+        }
+    }
+
+    /// Whether `pid` has `LOCALFOX_ID=<id>` in its environment right now.
+    public func carries(_ id: String, pid: pid_t) -> Bool {
+        guard let buffer = procArgs(pid: pid) else { return false }
+        let tag = Array("LOCALFOX_ID=\(id)".utf8)
+        return Self.environment(in: buffer).contains { $0.elementsEqual(tag) }
+    }
+
+    /// The `KEY=value` entries after argv. A platform binary's come back empty,
+    /// because the kernel withholds them.
+    static func environment(in buffer: [UInt8]) -> [ArraySlice<UInt8>] {
+        let headerSize = MemoryLayout<Int32>.size
+        guard buffer.count > headerSize else { return [] }
+        let argc = Int(buffer.prefix(headerSize).withUnsafeBytes { $0.loadUnaligned(as: Int32.self) })
+        // The executable path, then `argc` arguments, then the environment.
+        let entries = buffer.dropFirst(headerSize).split(separator: 0, omittingEmptySubsequences: true)
+        return Array(entries.dropFirst(1 + argc))
+    }
+
     /// Decodes a C buffer up to its first NUL.
     static func string(fromNulTerminated buffer: [CChar]) -> String? {
         let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }

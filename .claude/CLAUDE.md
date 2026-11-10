@@ -162,6 +162,14 @@ it created it with `SETSID`. This is the opposite of Portfox's rule, which avoid
 Escalate SIGINT, then SIGTERM, then SIGKILL: Vite and Next unbind cleanly on SIGINT and
 leak lock files on SIGKILL.
 
+**Then the tag.** Every spawned server carries `LOCALFOX_ID=<service id>`, and every
+stop path goes through `ServiceRuntime.terminate`, which sweeps for it after the group. A
+server that daemonizes calls `setsid` and leaves the group, but keeps its environment. The
+sweep reads every process of this user, so it runs on a stop, never on a timer. Each tagged
+process is re-checked (pid, start time and tag) before every signal, because one that
+exits mid-grace frees its pid. Portfox
+reads `LOCALFOX_HOST`, so do not rename it.
+
 **Verify process identity before every signal.** A snapshot can be seconds old, and the
 kernel can hand the same pid to a different process in that window.
 
