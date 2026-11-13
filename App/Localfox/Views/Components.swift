@@ -421,5 +421,6 @@ struct PreferenceCheckbox: View {
             .labelsHidden()
             .toggleStyle(.checkbox)
             .controlSize(.small)
+            .tint(Theme.accent)
     }
 }

@@ -5,19 +5,36 @@ struct PreferencesSheet: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
     @State private var launchAtLogin = LaunchAtLogin()
+    @State private var category: PreferencesCategory
 
     /// `ImageRenderer` lays out in a single pass and never draws scroll content.
     var scrolls = true
+
+    init(category: PreferencesCategory = .general, scrolls: Bool = true) {
+        _category = State(initialValue: category)
+        self.scrolls = scrolls
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().overlay(Theme.separator)
-            Scrollable(scrolls: scrolls) { sections }
+            HStack(spacing: 0) {
+                PreferencesSidebar(selection: $category)
+                Divider().overlay(Theme.separator)
+                VStack(alignment: .leading, spacing: 0) {
+                    PreferencesPageHeading(category: category)
+                    Scrollable(scrolls: scrolls) { sections }
+                        .id(category)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .frame(height: 480)
             Divider().overlay(Theme.separator)
             footer
         }
-        .frame(width: 560)
+        .frame(width: 720)
         .background(Theme.background)
         .themedSurface(state.appearance.colorScheme)
     }
@@ -33,14 +50,9 @@ struct PreferencesSheet: View {
                         .foregroundStyle(Theme.onAccent)
                 )
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Localfox preferences")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.primaryText)
-                Text("Configure appearance, startup and sharing")
-                    .font(.lfCaption)
-                    .foregroundStyle(Theme.secondaryText)
-            }
+            Text("Localfox preferences")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.primaryText)
 
             Spacer()
 
@@ -50,23 +62,26 @@ struct PreferencesSheet: View {
                 frameSize: Theme.Metrics.headerButtonSize,
                 filled: true
             ) { dismiss() }
+                .keyboardShortcut(.cancelAction)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
     }
 
     private var sections: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            appearanceSection
-            generalSection
-            proxySection
-            sharingSection
+        VStack(alignment: .leading, spacing: 18) {
+            switch category {
+            case .general: generalSection
+            case .appearance: appearanceSection
+            case .proxy: proxySection
+            case .sharing: sharingSection
+            }
         }
-        .padding(14)
+        .padding(20)
     }
 
     private var proxySection: some View {
-        DetailCard(title: "Proxy") {
+        PreferencesSection(title: "Request logging") {
             PreferenceRow(
                 title: "Record requests",
                 subtitle: "Method, URL, status and duration. Headers and cookies are never recorded"
@@ -85,16 +100,16 @@ struct PreferencesSheet: View {
     }
 
     private var sharingSection: some View {
-        DetailCard(title: "Sharing") {
+        PreferencesSection(title: "Public tunnels") {
             @Bindable var preferences = state.preferences
-            VStack(alignment: .leading, spacing: Theme.Metrics.cardPaddingV) {
+            VStack(alignment: .leading, spacing: 0) {
                 PreferenceRow(
                     title: "Rewrite the Host header",
-                    subtitle: "Needed by Vite and Next, wrong for Django ALLOWED_HOSTS and OAuth"
+                    subtitle: "Helps Vite and Next.js. Turn off for Django host checks or OAuth."
                 ) {
                     PreferenceCheckbox(isOn: $preferences.rewritesHostHeader)
                 }
-                CardDivider()
+                PreferenceDivider()
                 PreferenceRow(
                     title: "Warn before sharing",
                     subtitle: "Ask what a public tunnel exposes each time one is opened"
@@ -109,20 +124,20 @@ struct PreferencesSheet: View {
     }
 
     private var appearanceSection: some View {
-        DetailCard(title: "Appearance") {
+        PreferencesSection(title: "Theme and service list") {
             @Bindable var appearance = state.appearance
             @Bindable var preferences = state.preferences
-            VStack(alignment: .leading, spacing: Theme.Metrics.cardPaddingV) {
+            VStack(alignment: .leading, spacing: 0) {
                 PreferenceRow(
                     title: "Theme",
-                    subtitle: "Follow the system theme, or pin Localfox to light or dark"
+                    subtitle: "Use your Mac’s appearance or choose your own"
                 ) {
                     SegmentedControl(
                         selection: $appearance.preference,
                         options: AppAppearance.allCases.map { ($0, $0.displayName) }
                     )
                 }
-                CardDivider()
+                PreferenceDivider()
                 PreferenceRow(
                     title: "Compact rows",
                     subtitle: "One line per service, so more fit before the list scrolls"
@@ -134,8 +149,8 @@ struct PreferencesSheet: View {
     }
 
     private var generalSection: some View {
-        DetailCard(title: "General") {
-            VStack(alignment: .leading, spacing: Theme.Metrics.cardPaddingV) {
+        PreferencesSection(title: "Startup and behavior") {
+            VStack(alignment: .leading, spacing: 0) {
                 PreferenceRow(
                     title: "Launch at login",
                     subtitle: "Start Localfox automatically when you log in"
@@ -149,12 +164,14 @@ struct PreferencesSheet: View {
                     Text(error)
                         .font(.lfCaption)
                         .foregroundStyle(Theme.danger)
+                        .padding(.horizontal, Theme.Metrics.rowPaddingH)
+                        .padding(.bottom, 12)
                 }
                 if Updater.shared.isAvailable {
-                    CardDivider()
+                    PreferenceDivider()
                     updateRows
                 }
-                CardDivider()
+                PreferenceDivider()
                 PreferenceRow(
                     title: "Open Localfox",
                     subtitle: "A shortcut that opens the menu from any app"
@@ -162,17 +179,17 @@ struct PreferencesSheet: View {
                     KeyboardShortcuts.Recorder(for: .togglePopover)
                         .frame(width: 140)
                 }
-                CardDivider()
+                PreferenceDivider()
                 PreferenceRow(
-                    title: "Notify when a service is ready or crashes",
-                    subtitle: "When it is up while you are in another app, or stops on its own"
+                    title: "Service notifications",
+                    subtitle: "Notify when a service is ready or stops unexpectedly"
                 ) {
                     PreferenceCheckbox(isOn: Binding(
                         get: { state.preferences.notifiesCrashes },
                         set: { state.preferences.notifiesCrashes = $0 }
                     ))
                 }
-                CardDivider()
+                PreferenceDivider()
                 PreferenceRow(
                     title: "Share anonymous usage data",
                     subtitle: "Never includes domains, paths or ports"
@@ -197,7 +214,7 @@ struct PreferencesSheet: View {
         ) {
             PreferenceCheckbox(isOn: $updater.automaticallyChecks)
         }
-        CardDivider()
+        PreferenceDivider()
         PreferenceRow(title: "Check for updates") {
             ActionButton(title: "Check Now", symbol: "arrow.down.circle") { updater.checkForUpdates() }
                 .disabled(!updater.canCheckForUpdates)
@@ -206,65 +223,14 @@ struct PreferencesSheet: View {
 
     private var footer: some View {
         HStack {
+            Text("Changes are saved automatically")
+                .font(.lfCaption)
+                .foregroundStyle(Theme.secondaryText)
             Spacer()
             ActionButton(title: "Done", symbol: "checkmark", isPrimary: true) { dismiss() }
+                .keyboardShortcut(.defaultAction)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 18)
         .padding(.vertical, 10)
-    }
-}
-
-private struct PreferenceRow<Control: View>: View {
-    let title: String
-    var subtitle: String?
-    @ViewBuilder let control: () -> Control
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(Theme.primaryText)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.lfCaption)
-                        .foregroundStyle(Theme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 12)
-            control()
-        }
-    }
-}
-
-/// Hand-drawn rather than `Picker(.segmented)`, which renders as an empty block
-/// under `ImageRenderer` and ignores the palette.
-private struct SegmentedControl<Value: Hashable>: View {
-    @Binding var selection: Value
-    let options: [(value: Value, label: String)]
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(options, id: \.value) { option in
-                Button {
-                    selection = option.value
-                } label: {
-                    Text(option.label)
-                        .font(.lfCaption.weight(.medium))
-                        .foregroundStyle(option.value == selection ? Theme.onAccent : Theme.secondaryText)
-                        .padding(.horizontal, 9)
-                        .frame(height: Theme.Metrics.controlHeightSmall - 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: Theme.Metrics.controlRadius - 2, style: .continuous)
-                                .fill(option.value == selection ? Theme.accent : Color.clear)
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(2)
-        .background(ControlBackground(fill: Theme.pill))
     }
 }

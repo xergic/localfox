@@ -205,6 +205,15 @@ enum SnapshotRenderer {
         exit(0)
     }
 
+    /// Render any category without changing persisted settings.
+    private static var preferencesCategory: PreferencesCategory {
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "--preferences-category"),
+              index + 1 < arguments.count,
+              let category = PreferencesCategory(rawValue: arguments[index + 1]) else { return .general }
+        return category
+    }
+
     /// `ImageRenderer` lays out in one pass and never draws scroll content, so
     /// every scrollable surface carries a `scrolls` escape hatch that this path
     /// turns off. `forcesHover` reveals actions that only exist under a pointer.
@@ -221,7 +230,7 @@ enum SnapshotRenderer {
                 .background(Theme.background)
                 .themedSurface(state.appearance.colorScheme)
         case .preferences:
-            PreferencesSheet(scrolls: false)
+            PreferencesSheet(category: preferencesCategory, scrolls: false)
                 .environment(state)
         case .addRoute:
             AddRouteSheet(scrolls: false, name: "metabase", domain: "metabase.localhost", port: "3300")
