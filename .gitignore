@@ -15,3 +15,6 @@ dist/
 # Agent worktrees
 .claude/worktrees/
 Vendor/
+
+# Local DMG packaging tools
+.venv-dmg/
