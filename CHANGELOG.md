@@ -2,6 +2,12 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] - 2026-11-14
+
+### Changed
+- Settings is split into categories in a sidebar: General, Appearance, Proxy and Sharing.
+- The DMG installer matches the look of the Localfox website.
+
 ## [1.6.0] - 2026-11-10
 
 ### Added
