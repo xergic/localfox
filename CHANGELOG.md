@@ -2,6 +2,17 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.6.2] - 2026-11-21
+
+### Added
+- When a new version is out, a bar above the bottom of the menu and of the dashboard sidebar says so. Click Update… to see what changed and install it. The update window no longer opens on its own over your work.
+
+### Changed
+- The search field, buttons and header icons are a little larger, borders are lighter, and the toolbar and sidebar have their own background.
+
+### Fixed
+- Installing an update from Settings now restarts Localfox on the new version. It used to keep the old version running.
+
 ## [1.6.1] - 2026-11-14
 
 ### Changed
