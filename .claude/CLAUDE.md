@@ -217,6 +217,14 @@ version running. Every entry point calls `AppState.checkForUpdates()`, which
 closes Preferences and checks from the sheet's `onDismiss`. Every sheet also wears
 `allowsAppTermination()`, for one opened while the update installs.
 
+**A scheduled update never opens Sparkle's window.** The user driver declines
+it, `Updater.pendingVersion` takes the version, and `UpdateBanner` shows above
+the popover footer and the sidebar's project count. Its click calls
+`checkForUpdates()`, which brings up the standard window for the pending update,
+and `InstallGuard` still asks before Install stops anything. Sparkle's own daily
+scheduler drives the checks. A timer of ours would compete with it. `--update`
+draws the banner in a snapshot.
+
 ## Adding a framework detector
 
 Three edits, no new code paths:

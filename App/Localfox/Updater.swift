@@ -9,6 +9,8 @@ final class Updater {
 
     private(set) var isAvailable = false
     private(set) var canCheckForUpdates = false
+    /// A scheduled check found this version and left it to `UpdateBanner`.
+    fileprivate(set) var pendingVersion: String?
 
     var automaticallyChecks = false {
         didSet {
@@ -37,6 +39,7 @@ final class Updater {
             updaterDelegate: delegate,
             userDriverDelegate: userDriverDelegate
         )
+        userDriverDelegate.updater = self
         self.controller = controller
         updaterDelegate = delegate
         isAvailable = true
@@ -49,21 +52,61 @@ final class Updater {
             }
     }
 
+    /// Activates first, as the dashboard does. Sparkle's own activation is
+    /// unreliable from a menu bar app, so a click on the banner opened the
+    /// update window behind the frontmost app.
     func checkForUpdates() {
+        NSApp.activate()
         controller?.checkForUpdates(nil)
+    }
+
+    func previewBanner(version: String) {
+        pendingVersion = version
     }
 }
 
-/// An `LSUIElement` app is never active on its own, so without this a scheduled
-/// update opens its window behind whatever the user is working in.
-private final class UserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
+/// A scheduled update never opens Sparkle's window. It shows `UpdateBanner`,
+/// which hands back to the standard UI through `checkForUpdates`.
+@MainActor
+private final class UserDriverDelegate: NSObject, @preconcurrency SPUStandardUserDriverDelegate {
+    weak var updater: Updater?
+
     var supportsGentleScheduledUpdateReminders: Bool { true }
+
+    func standardUserDriverShouldHandleShowingScheduledUpdate(
+        _ update: SUAppcastItem,
+        andInImmediateFocus immediateFocus: Bool
+    ) -> Bool {
+        false
+    }
 
     func standardUserDriverWillHandleShowingUpdate(
         _ handleShowingUpdate: Bool,
         forUpdate update: SUAppcastItem,
         state: SPUUserUpdateState
     ) {
+        guard handleShowingUpdate else {
+            if updater?.pendingVersion != update.displayVersionString {
+                updater?.pendingVersion = update.displayVersionString
+            }
+            return
+        }
+        // An `LSUIElement` app is never active on its own, so the window would
+        // open behind the frontmost app.
         NSApp.activate()
+    }
+
+    /// Cleared here rather than at the session's end, because after Install, or
+    /// InstallGuard's Later, the banner would offer a window with nothing left to do.
+    func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {
+        clearBanner()
+    }
+
+    func standardUserDriverWillFinishUpdateSession() {
+        clearBanner()
+    }
+
+    private func clearBanner() {
+        if updater?.pendingVersion != nil { updater?.pendingVersion = nil }
     }
 }

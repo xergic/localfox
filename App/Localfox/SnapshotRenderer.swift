@@ -6,7 +6,7 @@ import SwiftUI
 /// Renders a surface to a PNG and exits, so the design can be reviewed without
 /// Screen Recording permission and without hand-driving the menu bar.
 ///
-/// Usage: `Localfox --snapshot out.png [--hover] [--light] [--demo]`, `--snapshot-dashboard out.png`
+/// Usage: `Localfox --snapshot out.png [--hover] [--light] [--demo] [--update]`, `--snapshot-dashboard out.png`
 /// or `--snapshot-prefs out.png` or `--snapshot-add-route out.png`.
 @MainActor
 enum SnapshotRenderer {
@@ -182,6 +182,7 @@ enum SnapshotRenderer {
         }
         #endif
         if CommandLine.arguments.contains("--light") { state.appearance.force(.light) }
+        if CommandLine.arguments.contains("--update") { Updater.shared.previewBanner(version: "9.9.0") }
         if selection == nil { await state.load() }
 
         let renderer = ImageRenderer(content: content(for: request.surface, state: state, selection: selection))

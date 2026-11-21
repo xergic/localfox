@@ -154,6 +154,7 @@ struct DashboardContent: View {
                 }
             }
             Spacer(minLength: 0)
+            UpdateBanner()
             Divider().overlay(Theme.separator)
             HStack {
                 Text("\(state.projects.count) project\(state.projects.count == 1 ? "" : "s")")
