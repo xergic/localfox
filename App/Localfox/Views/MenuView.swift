@@ -353,7 +353,7 @@ struct ProjectSection: View {
             }
         }
         .sheet(isPresented: $isEditing) {
-            EditProjectSheet(project: project).environment(state)
+            EditProjectSheet(project: project).environment(state).allowsAppTermination()
         }
         .alert("Remove \(project.name)?", isPresented: $isConfirmingRemove) {
             Button("Cancel", role: .cancel) {}

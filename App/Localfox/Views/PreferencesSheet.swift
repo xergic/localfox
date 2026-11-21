@@ -216,7 +216,7 @@ struct PreferencesSheet: View {
         }
         PreferenceDivider()
         PreferenceRow(title: "Check for updates") {
-            ActionButton(title: "Check Now", symbol: "arrow.down.circle") { updater.checkForUpdates() }
+            ActionButton(title: "Check Now", symbol: "arrow.down.circle") { state.checkForUpdates() }
                 .disabled(!updater.canCheckForUpdates)
         }
     }

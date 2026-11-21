@@ -67,13 +67,13 @@ struct DashboardContent: View {
             }
         }
         .sheet(isPresented: $isAddingProject) {
-            AddProjectSheet().environment(state)
+            AddProjectSheet().environment(state).allowsAppTermination()
         }
         .sheet(isPresented: $isAddingRoute) {
-            AddRouteSheet().environment(state)
+            AddRouteSheet().environment(state).allowsAppTermination()
         }
-        .sheet(isPresented: $state.presentsPreferences) {
-            PreferencesSheet().environment(state)
+        .sheet(isPresented: $state.presentsPreferences, onDismiss: state.sheetDidDismiss) {
+            PreferencesSheet().environment(state).allowsAppTermination()
         }
         // The helper is approved in System Settings, outside this process, so
         // returning to Localfox is the only signal that anything changed.

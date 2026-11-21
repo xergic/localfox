@@ -211,6 +211,12 @@ while `runningCount > 0`. Later leaves everything running and keeps Sparkle's in
 handler, which installs once nothing runs. Dropping that handler stalls the update
 session until the app quits.
 
+**An update check closes the open sheet first.** AppKit refuses Sparkle's quit
+while a sheet is attached, so an install started from Preferences kept the old
+version running. Every entry point calls `AppState.checkForUpdates()`, which
+closes Preferences and checks from the sheet's `onDismiss`. Every sheet also wears
+`allowsAppTermination()`, for one opened while the update installs.
+
 ## Adding a framework detector
 
 Three edits, no new code paths:

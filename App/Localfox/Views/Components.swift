@@ -433,3 +433,15 @@ struct AppControlStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.65 : 1)
     }
 }
+
+extension View {
+    /// An attached sheet vetoes Sparkle's quit. `AppState.checkForUpdates` closes
+    /// Preferences first, this covers any sheet open while an update installs.
+    @ViewBuilder func allowsAppTermination() -> some View {
+        if #available(macOS 15.4, *) {
+            presentationPreventsAppTermination(false)
+        } else {
+            self
+        }
+    }
+}
