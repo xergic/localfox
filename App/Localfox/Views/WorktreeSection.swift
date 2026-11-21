@@ -77,7 +77,7 @@ struct WorktreeSection: View {
             }
         }
         .padding(.leading, 6)
-        .background(Theme.background)
+        .background(Theme.sidebarBackground)
         .padding(.trailing, Theme.Metrics.headerActionsInset)
     }
 

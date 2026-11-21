@@ -9,8 +9,13 @@ import SwiftUI
 /// unchanged call sites, and it keeps working under `ImageRenderer`, where a
 /// snapshot of the light appearance has to actually come out light.
 enum Theme {
-    /// Rows sit straight on this, so it is the row colour as well as the window's.
+    /// The working surface behind detail content and sheets.
     static let background = dynamic(dark: srgb(0.110, 0.110, 0.118), light: srgb(1, 1, 1))
+    /// Quiet chrome separates navigation from the working surface without a heavy border.
+    static let toolbarBackground = dynamic(dark: srgb(0.137, 0.137, 0.149), light: srgb(0.980, 0.980, 0.984))
+    static let sidebarBackground = dynamic(dark: srgb(0.125, 0.125, 0.137), light: srgb(0.969, 0.969, 0.976))
+    static let controlFill = dynamic(dark: srgb(0.180, 0.180, 0.196), light: srgb(1, 1, 1))
+    static let segmentSelected = dynamic(dark: srgb(0.275, 0.275, 0.294), light: srgb(1, 1, 1))
     /// One step up from `background`: a contained element such as a detail card.
     static let card = dynamic(dark: srgb(0.165, 0.165, 0.176), light: srgb(0.957, 0.957, 0.965))
     static let cardHover = dynamic(dark: srgb(0.180, 0.180, 0.192), light: srgb(0.929, 0.929, 0.941))
@@ -21,8 +26,8 @@ enum Theme {
     static let secondaryText = dynamic(dark: srgb(0.541, 0.541, 0.576), light: srgb(0.400, 0.400, 0.435))
     static let tertiaryText = dynamic(dark: srgb(0.396, 0.396, 0.427), light: srgb(0.557, 0.557, 0.588))
 
-    /// Interactive chrome only: a primary button, a selected row, a chosen
-    /// segment. The same purple as the app icon, so the accent is the brand.
+    /// Interactive chrome only: primary actions and navigation selections.
+    /// The same purple as the app icon, so the accent is the brand.
     /// One value for both appearances, because a brand that changes shade with
     /// the theme stops being a brand.
     static let accent = Color(nsColor: accentBrand)
@@ -97,12 +102,12 @@ enum Theme {
         static let cardRadius: CGFloat = 10
         /// Bordered controls: action buttons and the segmented picker.
         static let controlRadius: CGFloat = 8
-        static let controlHeightSmall: CGFloat = 24
+        static let controlHeightSmall: CGFloat = 26
         static let badgeRadius: CGFloat = 3
         static let rowPaddingH: CGFloat = 12
         /// The hover and selection fill of a flat row.
         static let rowRadius: CGFloat = 6
-        static let searchHeight: CGFloat = 26
+        static let searchHeight: CGFloat = 30
         /// A flat list row. Narrower than `rowPaddingH`, so the row's text lines
         /// up with the header while its hover fill still has room to show.
         static let listRowPaddingH: CGFloat = 8
@@ -138,7 +143,7 @@ enum Theme {
         static let projectIcon: CGFloat = 16
 
         /// The icon buttons beside the app name in the popover.
-        static let headerButtonSize: CGFloat = 22
+        static let headerButtonSize: CGFloat = 28
         static let headerSymbolSize: CGFloat = 12
         static let dashboardWidth: CGFloat = 1180
         static let dashboardHeight: CGFloat = 820

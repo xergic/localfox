@@ -50,6 +50,7 @@ struct ServiceRow: View {
         .padding(.horizontal, Theme.Metrics.listRowPaddingH)
         .padding(.vertical, Theme.Metrics.rowPaddingV(compact: isCompact))
         .background(rowFill, in: .row)
+        .overlay(RoundedRectangle.row.strokeBorder(isSelected ? Theme.accent.opacity(0.25) : .clear, lineWidth: 0.5))
         .contentShape(Rectangle())
         .onTapGesture { selection?.wrappedValue = service.id }
         .onHover { hovering in

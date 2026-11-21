@@ -79,16 +79,18 @@ struct SegmentedControl<Value: Hashable>: View {
                 } label: {
                     Text(option.label)
                         .font(.lfCaption.weight(.medium))
-                        .foregroundStyle(option.value == selection ? Theme.onAccent : Theme.secondaryText)
+                        .foregroundStyle(option.value == selection ? Theme.primaryText : Theme.secondaryText)
                         .padding(.horizontal, 9)
                         .frame(height: Theme.Metrics.controlHeightSmall - 4)
                         .background(
                             RoundedRectangle(cornerRadius: Theme.Metrics.controlRadius - 2, style: .continuous)
-                                .fill(option.value == selection ? Theme.accent : Color.clear)
+                                .fill(option.value == selection ? Theme.segmentSelected : Color.clear)
+                                .shadow(color: .black.opacity(option.value == selection ? 0.12 : 0), radius: 1, y: 1)
                         )
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AppControlStyle())
+                .accessibilityAddTraits(option.value == selection ? .isSelected : [])
             }
         }
         .padding(2)

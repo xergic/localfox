@@ -61,6 +61,7 @@ struct DashboardContent: View {
             HStack(spacing: 0) {
                 sidebar
                     .frame(width: Theme.Metrics.sidebarWidth)
+                    .background(Theme.sidebarBackground)
                 Divider().overlay(Theme.separator)
                 detail
             }
@@ -112,7 +113,8 @@ struct DashboardContent: View {
             ) { state.presentsPreferences = true }
         }
         .padding(.horizontal, Theme.Metrics.barPaddingH)
-        .padding(.vertical, Theme.Metrics.barPaddingV)
+        .frame(height: 52)
+        .background(Theme.toolbarBackground)
     }
 
     private var sidebar: some View {
@@ -161,6 +163,7 @@ struct DashboardContent: View {
             }
             .padding(.horizontal, Theme.Metrics.barPaddingH)
             .padding(.vertical, Theme.Metrics.barPaddingV)
+            .background(Theme.toolbarBackground)
         }
     }
 

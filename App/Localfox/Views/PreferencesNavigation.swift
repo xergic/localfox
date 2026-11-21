@@ -85,7 +85,7 @@ private struct PreferencesNavigationItem: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AppControlStyle())
         .onHover { isHovering = $0 }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

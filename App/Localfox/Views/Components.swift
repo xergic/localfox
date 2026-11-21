@@ -21,7 +21,7 @@ struct IconButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: symbolSize, weight: .medium))
-                .foregroundStyle(isHovering ? Theme.primaryText : tint)
+                .foregroundStyle(isHovering && tint == Theme.secondaryText ? Theme.primaryText : tint)
                 .rotationEffect(.degrees(spins ? 360 : 0))
                 .animation(
                     spins ? .linear(duration: 0.9).repeatForever(autoreverses: false) : .default,
@@ -35,9 +35,10 @@ struct IconButton: View {
                 }
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AppControlStyle())
         .onHover { isHovering = $0 }
         .help(help)
+        .accessibilityLabel(help.isEmpty ? symbol : help)
     }
 }
 
@@ -66,9 +67,9 @@ struct AppHeader<Summary: View, Trailing: View>: View {
 
     private var identity: some View {
         HStack(spacing: 8) {
-            AppIconView(size: 18)
+            AppIconView(size: 22)
             Text(AppInfo.name)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Theme.primaryText)
                 .lineLimit(1)
         }
@@ -156,7 +157,7 @@ struct CardBackground: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-        shape.fill(fill).overlay(shape.strokeBorder(border, lineWidth: 1))
+        shape.fill(fill).overlay(shape.strokeBorder(border, lineWidth: 0.5))
     }
 }
 
@@ -167,7 +168,7 @@ struct ControlBackground: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.Metrics.controlRadius, style: .continuous)
-        shape.fill(isHovering ? Theme.cardHover : fill).overlay(shape.strokeBorder(border, lineWidth: 1))
+        shape.fill(isHovering ? Theme.cardHover : fill).overlay(shape.strokeBorder(border, lineWidth: 0.5))
     }
 }
 
@@ -246,7 +247,7 @@ struct ActionButton: View {
             .actionChrome(isPrimary: isPrimary, isHovering: isHovering)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AppControlStyle())
         .opacity(isEnabled ? 1 : 0.4)
         .onHover { isHovering = $0 }
     }
@@ -422,5 +423,13 @@ struct PreferenceCheckbox: View {
             .toggleStyle(.checkbox)
             .controlSize(.small)
             .tint(Theme.accent)
+    }
+}
+
+/// Keeps custom-drawn controls responsive to a press, including keyboard activation.
+struct AppControlStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.65 : 1)
     }
 }

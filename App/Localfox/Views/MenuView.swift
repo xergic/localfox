@@ -48,7 +48,7 @@ struct MenuView: View {
             footer
         }
         .frame(width: Theme.Metrics.popoverWidth)
-        .background(Theme.background)
+        .background(Theme.sidebarBackground)
         .themedSurface(state.appearance.colorScheme)
         // On the root rather than the field, so the keys still work after a
         // click lands on a row and the field loses focus.
@@ -142,7 +142,8 @@ struct MenuView: View {
         }
         .padding(.horizontal, Theme.Metrics.contentInset)
         .padding(.top, 12)
-        .padding(.bottom, 10)
+        .padding(.bottom, 12)
+        .background(Theme.toolbarBackground)
     }
 
     /// Localfox has no unprivileged fallback, so an unapproved helper blocks the
@@ -224,7 +225,8 @@ struct MenuView: View {
                 .keyboardShortcut("q")
         }
         .padding(.horizontal, Theme.Metrics.contentInset)
-        .padding(.vertical, 9)
+        .padding(.vertical, 5)
+        .background(Theme.toolbarBackground)
     }
 }
 
@@ -245,9 +247,10 @@ private struct FooterButton: View {
                 }
             }
             .font(.lfCaption)
+            .frame(minHeight: 24)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AppControlStyle())
         .onHover { isHovering = $0 }
     }
 }
@@ -395,7 +398,7 @@ struct ProjectSection: View {
         // On the surface colour, so a long name running under the buttons is
         // covered rather than drawn through them.
         .padding(.leading, 6)
-        .background(Theme.background)
+        .background(Theme.sidebarBackground)
         .padding(.trailing, Theme.Metrics.headerActionsInset)
     }
 
