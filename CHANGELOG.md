@@ -2,6 +2,22 @@
 
 Notable changes to Localfox. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.6.3] - 2026-11-26
+
+### Added
+
+- Enter a development command when importing a project whose script Localfox cannot detect. You can also set a fixed port when adding or editing a service. Leave it blank for automatic discovery.
+
+### Fixed
+
+- Vite and other servers that listen on IPv6 loopback now work over local HTTPS. Quick and SSH tunnels use the same address that answered discovery.
+- Slow builds keep running after 30 seconds and can be stopped while they start. Shell commands with environment assignments or multiple steps work, and npm scripts receive the configured port.
+- Starting a worktree service can reuse a server in that checkout. Localfox gives a cold server time to answer before offering to start another copy.
+- HTTPS setup works before the first project is added. Localfox replaces an outdated helper after an update and can repair an expired certificate. Service controls and logs stay available while the proxy is down.
+- Open becomes available when the proxy accepts the service’s route. Copy URL still works while the service is stopped.
+- Public sharing asks for confirmation on every share unless you turn the warning off in Settings. The warning is enabled again on upgrade. Named tunnels check that the service is listening on the configured port.
+- Failed edits preserve saved tunnel credentials. A locked Keychain no longer prevents removing a project or service.
+
 ## [1.6.2] - 2026-11-21
 
 ### Added
