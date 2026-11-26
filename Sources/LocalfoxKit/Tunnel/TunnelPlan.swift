@@ -10,14 +10,14 @@ import Foundation
 /// down, with no knowledge of which mode it is running.
 public enum TunnelPlan: Sendable, Equatable {
     /// A free, random `*.trycloudflare.com` address for a discovered port.
-    case quick(port: Int, rewritesHost: Bool)
+    case quick(port: Int, rewritesHost: Bool, family: ListeningSocket.AddressFamily = .ipv4)
     /// A tunnel the user created in Cloudflare, addressed by its token.
     ///
     /// No port. A tunnel run from a token is managed remotely, so the origin
     /// lives in the dashboard and Localfox cannot change it.
     case named(token: String, hostname: URL)
     /// A reverse forward to a machine the user owns. No third party at all.
-    case ssh(target: SSHTunnelTarget, port: Int)
+    case ssh(target: SSHTunnelTarget, port: Int, family: ListeningSocket.AddressFamily = .ipv4)
 
     /// What the log has said so far.
     public enum Reading: Sendable, Equatable {
@@ -34,12 +34,12 @@ public enum TunnelPlan: Sendable, Equatable {
     ///   not use it.
     public func request(cloudflared: URL) -> SpawnRequest {
         switch self {
-        case let .quick(port, rewritesHost):
-            CloudflaredCommand.request(binary: cloudflared, port: port, rewriteHost: rewritesHost)
+        case let .quick(port, rewritesHost, family):
+            CloudflaredCommand.request(binary: cloudflared, port: port, rewriteHost: rewritesHost, family: family)
         case let .named(token, _):
             CloudflaredCommand.named(binary: cloudflared, token: token)
-        case let .ssh(target, port):
-            SSHTunnelCommand.request(target: target, localPort: port)
+        case let .ssh(target, port, family):
+            SSHTunnelCommand.request(target: target, localPort: port, family: family)
         }
     }
 
@@ -59,7 +59,7 @@ public enum TunnelPlan: Sendable, Equatable {
     /// `sshd` without `GatewayPorts yes`, which binds the forward to the
     /// server's own loopback and reports no error anywhere.
     public var probeURL: URL? {
-        if case let .ssh(target, _) = self { return target.publicURL }
+        if case let .ssh(target, _, _) = self { return target.publicURL }
         return nil
     }
 
@@ -99,7 +99,7 @@ public enum TunnelPlan: Sendable, Equatable {
         switch self {
         case .quick: .noURL(log: String(log.suffix(2_000)))
         case .named: .neverRegistered(log: String(log.suffix(2_000)))
-        case let .ssh(target, _): .sshUnreachable(url: target.publicURL, log: String(log.suffix(1_000)))
+        case let .ssh(target, _, _): .sshUnreachable(url: target.publicURL, log: String(log.suffix(1_000)))
         }
     }
 }

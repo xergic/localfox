@@ -2,13 +2,10 @@ import Foundation
 
 /// Builds the `cloudflared` invocations Localfox uses. Pure.
 public enum CloudflaredCommand {
-    /// The loopback address the tunnel dials.
-    ///
-    /// `127.0.0.1` and never `localhost`, which resolves to `::1` first on a
-    /// normal Mac. A dev server bound to IPv4 only would then refuse the
-    /// connection, and cloudflared reports that as a bare 502 with nothing in
-    /// the log to say the address family was the problem.
-    public static func origin(port: Int) -> String { "http://127.0.0.1:\(port)" }
+    /// Dials the explicit loopback family that answered discovery.
+    public static func origin(port: Int, family: ListeningSocket.AddressFamily = .ipv4) -> String {
+        "http://\(family.loopbackHost):\(port)"
+    }
 
     /// The value `--http-host-header` rewrites to.
     ///
@@ -25,6 +22,7 @@ public enum CloudflaredCommand {
         binary: URL,
         port: Int,
         rewriteHost: Bool,
+        family: ListeningSocket.AddressFamily = .ipv4,
         workingDirectory: URL = FileManager.default.temporaryDirectory
     ) -> SpawnRequest {
         var arguments = [
@@ -41,7 +39,7 @@ public enum CloudflaredCommand {
             // which is why QuickTunnelParser matches failures by signal rather
             // than by level.
             "--config", "/dev/null",
-            "--url", origin(port: port),
+            "--url", origin(port: port, family: family),
             // The binary is sealed into a signed bundle. An in-place self-update
             // would break the seal, and on a read-only /Applications copy it
             // fails noisily for no gain.

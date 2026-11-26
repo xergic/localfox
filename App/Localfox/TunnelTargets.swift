@@ -22,6 +22,7 @@ final class TunnelTargets {
         }
     }
 
+    private var pending: Set<UUID> = []
     private let defaults: UserDefaults
     /// Mirrors what is on disk so a view reading `hostname(for:)` redraws when
     /// the edit sheet saves. `UserDefaults` is not observable on its own.
@@ -61,7 +62,13 @@ final class TunnelTargets {
                let target = try? JSONDecoder().decode(SSHTunnelTarget.self, from: data) {
                 sshTargets[id] = target
             }
-            if Keychain.secret(account: id.uuidString) != nil { tokenHolders.insert(id) }
+            guard hostnames[id] != nil else { continue }
+            do {
+                if try Keychain.containsSecret(account: id.uuidString) { tokenHolders.insert(id) }
+            } catch {
+                // A locked keychain is temporary. Keep the saved target reachable so Share can explain the error.
+                tokenHolders.insert(id)
+            }
         }
         assign(\.hostnames, hostnames)
         assign(\.sshTargets, sshTargets)
@@ -79,44 +86,72 @@ final class TunnelTargets {
     }
 
     /// The secret itself, read on the share path only.
-    func token(for serviceID: UUID) -> String? {
-        Keychain.secret(account: serviceID.uuidString)
+    func token(for serviceID: UUID) throws -> String? {
+        guard !pending.contains(serviceID) else { return nil }
+        return try Keychain.secret(account: serviceID.uuidString)
     }
 
-    /// Saves both halves, or clears both when the hostname is blank.
-    ///
-    /// A token with no hostname would be a credential kept for a share that can
-    /// never be started, so the two are written and cleared together.
-    ///
-    /// - Parameter token: nil leaves the stored token alone, which is what an
-    ///   edit sheet showing a masked placeholder needs. An empty string clears it.
-    func setNamed(hostname: String, token: String?, for serviceID: UUID) {
-        guard let url = Self.url(from: hostname) else {
-            clearNamed(for: serviceID)
-            return
+    struct Change {
+        let id: UUID
+        let hostname: URL?
+        /// nil preserves the stored token, and a blank value removes it.
+        let token: String?
+        let ssh: SSHTunnelTarget?
+    }
+
+    /// Preferences are published only after the project is safely written. If a later
+    /// credential or the project write fails, restore every earlier credential.
+    func saving(
+        _ changes: [Change], removing removed: [UUID] = [], project save: @MainActor () async throws -> Void
+    ) async throws -> String? {
+        let ids = Set(changes.map(\.id)).union(removed)
+        guard pending.isDisjoint(with: ids) else { throw StoreError.projectChanged }
+        pending.formUnion(ids)
+        defer { pending.subtract(ids) }
+        var originals: [(account: String, value: String?)] = []
+        do {
+            for change in changes {
+                guard let token = change.token else { continue }
+                let account = change.id.uuidString
+                let original = try Keychain.secret(account: account)
+                guard Keychain.setSecret(token, account: account) else { throw Keychain.AccessError() }
+                originals.append((account, original))
+            }
+            try await save()
+        } catch {
+            var restored = true
+            for original in originals.reversed() where !Keychain.setSecret(original.value, account: original.account) {
+                restored = false
+            }
+            guard restored else { throw Keychain.AccessError() }
+            throw error
         }
-        assign(\.hostnames[serviceID], url)
-        defaults.set(url.absoluteString, forKey: Key.hostname(serviceID))
-        guard let token else { return }
-        Keychain.setSecret(token, account: serviceID.uuidString)
-        assign(\.tokenHolders, tokenHolders.union([serviceID]))
+        for change in changes {
+            assign(\.hostnames[change.id], change.hostname)
+            defaults.set(change.hostname?.absoluteString, forKey: Key.hostname(change.id))
+            if let token = change.token {
+                if token.isEmpty { tokenHolders.remove(change.id) } else { tokenHolders.insert(change.id) }
+            }
+            setSSH(change.ssh, for: change.id)
+        }
+        let remaining = removed.filter { !removeStoredTarget(for: $0) }
+        guard !remaining.isEmpty else { return nil }
+        let accounts = remaining.map(\.uuidString).joined(separator: ", ")
+        return """
+        Localfox removed the service configuration. To finish removing its tunnel credentials, unlock your keychain and \
+        use Keychain Access to delete the net.kandera.Localfox.tunnel entries for these accounts: \(accounts).
+        """
     }
 
-    func clearNamed(for serviceID: UUID) {
-        assign(\.hostnames[serviceID], nil)
-        assign(\.tokenHolders, tokenHolders.subtracting([serviceID]))
-        defaults.removeObject(forKey: Key.hostname(serviceID))
-        Keychain.setSecret(nil, account: serviceID.uuidString)
-    }
-
-    /// Forgets everything stored for a service.
-    ///
-    /// One call, so removing a project cannot clear one half and leave the
-    /// other. A per-service key whose service no longer exists is unreachable
-    /// garbage: no new service is ever given that id.
-    func remove(for serviceID: UUID) {
-        clearNamed(for: serviceID)
-        setSSH(nil, for: serviceID)
+    /// A removed service cannot be retried in the editor. Drop its preferences after the project
+    /// commit and attempt to delete the obsolete credential without reading or unlocking it.
+    private func removeStoredTarget(for id: UUID) -> Bool {
+        let hasNamed = defaults.string(forKey: Key.hostname(id)) != nil || tokenHolders.contains(id)
+        defaults.removeObject(forKey: Key.hostname(id))
+        assign(\.hostnames[id], nil)
+        tokenHolders.remove(id)
+        setSSH(nil, for: id)
+        return !hasNamed || Keychain.deleteSecret(account: id.uuidString, allowsInteraction: false)
     }
 
     // MARK: - SSH
@@ -153,16 +188,17 @@ final class TunnelTargets {
     /// Accepts a bare hostname as well as a URL, because the Cloudflare
     /// dashboard shows a public hostname as `share.example.com` and that is what
     /// a user pastes.
-    static func url(from text: String) -> URL? {
+    nonisolated static func url(from text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
-        guard let url = URL(string: candidate),
-              url.scheme == "https",
-              let host = url.host,
-              host.contains("."),
-              !host.hasSuffix(".localhost")
+        guard let parts = URLComponents(string: candidate),
+              parts.scheme?.lowercased() == "https",
+              parts.user == nil, parts.password == nil, parts.port == nil,
+              parts.path.isEmpty || parts.path == "/", parts.query == nil, parts.fragment == nil,
+              let host = parts.host?.lowercased(), host.contains("."),
+              !host.hasSuffix(".localhost"), LocalDomain("\(host).localhost") != nil
         else { return nil }
-        return url
+        return URL(string: "https://\(host)")
     }
 }

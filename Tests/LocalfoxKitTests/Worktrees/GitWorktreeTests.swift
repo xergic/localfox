@@ -71,6 +71,16 @@ struct GitWorktreeTests {
         #expect(list.projectPath(for: URL(fileURLWithPath: "/Users/me/other")) == nil)
     }
 
+    @Test("adoption includes the selected checkout and excludes the other linked checkouts")
+    func adoptionScope() throws {
+        let list = try #require(GitWorktreeList.parse(porcelain))
+        let checkout = try #require(list.linked.first).directory
+        #expect(list.otherCheckoutDirectories(for: list.main) == list.linked.map(\.directory))
+        #expect(list.otherCheckoutDirectories(for: checkout) == list.linked.dropFirst().map(\.directory))
+        #expect(list.otherCheckoutDirectories(for: checkout.appendingPathComponent("apps/web"))
+            == list.linked.dropFirst().map(\.directory))
+    }
+
     @Test("empty output is no repository")
     func emptyOutput() {
         #expect(GitWorktreeList.parse("") == nil)

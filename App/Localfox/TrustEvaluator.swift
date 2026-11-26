@@ -9,16 +9,8 @@ enum TrustEvaluator {
     }
 
     static func parsePEM(_ pem: Data) throws -> ParsedCertificate {
-        guard let text = String(data: pem, encoding: .utf8),
-              let bodyStart = text.range(of: "-----BEGIN CERTIFICATE-----")?.upperBound,
-              let bodyEnd = text.range(of: "-----END CERTIFICATE-----", range: bodyStart..<text.endIndex)?.lowerBound,
-              let der = Data(base64Encoded: String(text[bodyStart..<bodyEnd]), options: .ignoreUnknownCharacters),
-              !der.isEmpty,
-              let certificate = SecCertificateCreateWithData(nil, der as CFData)
-        else {
-            throw TrustEvaluatorError.invalidPEM
-        }
-        return ParsedCertificate(der: der, certificate: certificate)
+        let certificate = try CaddyAuthorityStorage.parsePEM(pem)
+        return ParsedCertificate(der: SecCertificateCopyData(certificate) as Data, certificate: certificate)
     }
 
     static func identity(for parsedCertificate: ParsedCertificate) throws -> RootCAIdentity {
@@ -151,7 +143,6 @@ private enum TrustEvaluatorError: LocalizedError {
     case certificateValues(CFError?)
     case createTrust(OSStatus)
     case invalidKeychainResult
-    case invalidPEM
     case keychain(OSStatus)
     case missingCommonName
     case missingValidity
@@ -164,8 +155,6 @@ private enum TrustEvaluatorError: LocalizedError {
             "macOS could not create a certificate trust check. Reinstall the Localfox certificate, then try again."
         case .invalidKeychainResult:
             "macOS returned an unexpected certificate list. Reopen Localfox, then try again."
-        case .invalidPEM:
-            "The helper returned an invalid certificate. Restart the proxy to regenerate it, then try again."
         case .keychain:
             "Localfox could not read certificates from the keychain. Unlock the keychain, then try again."
         case .missingCommonName, .missingValidity:

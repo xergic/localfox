@@ -12,12 +12,12 @@ actor ServiceRuntime {
         var log: LogBuffer
         var discovery: Task<Void, Never>?
         var drain: Task<Void, Never>?
-        /// Set before Localfox signals the group, so the pipes closing as a result
-        /// read as the stop the user asked for and not as a crash.
-        var isStopping = false
+        /// A concurrent Stop, Restart or Quit must wait for the same process cleanup.
+        var termination: Task<Void, Never>?
     }
 
     private var running: [UUID: Running] = [:]
+    private var isShuttingDown = false
     private let shell: ShellEnvironment
     private let onStatus: @Sendable (UUID, ServiceStatus) -> Void
     private let onLog: @Sendable (UUID) -> Void
@@ -43,7 +43,7 @@ actor ServiceRuntime {
     // MARK: - Starting
 
     func start(_ service: Service, projectName: String) async {
-        guard running[service.id] == nil else { return }
+        guard !isShuttingDown, running[service.id] == nil else { return }
         onStatus(service.id, .starting)
 
         var environment = shell.variables
@@ -129,72 +129,53 @@ actor ServiceRuntime {
                         while true {
                             let data = handle.availableData
                             if data.isEmpty { break }
-                            await self?.appendLog(String(decoding: data, as: UTF8.self), for: id)
+                            await self?.appendLog(String(decoding: data, as: UTF8.self), for: id, pid: process.pid)
                         }
                     }
                 }
             }
-            await self?.outputClosed(for: id)
+            await self?.outputClosed(for: id, pid: process.pid)
         }
     }
 
     /// Both pipes closed. Unless Localfox asked for it, the server ended on its
     /// own: a crash, a port already taken, a `kill` from a terminal. Without this
     /// a dead server stayed "running" and kept its proxy route to nothing.
-    private func outputClosed(for id: UUID) async {
-        guard let pid = running[id]?.process.pid, running[id]?.isStopping == false else { return }
-        guard let reason = await ProcessSpawner.reap(pid) else { return }
-        // Read again after the wait: a Stop may have started in the meantime.
-        guard let record = running[id], !record.isStopping else { return }
-        running[id] = nil
-        record.discovery?.cancel()
-        // A child the leader left behind would otherwise keep the port.
-        await terminate(record, id: id)
-        onStatus(id, .failed(.init(reason: reason, output: String(record.log.text.suffix(2_000)))))
+    private func outputClosed(for id: UUID, pid: pid_t) async {
+        guard isCurrent(id, pid: pid), let reason = await ProcessSpawner.reap(pid, within: nil),
+              isCurrent(id, pid: pid), let record = running[id] else { return }
+        let failure = ServiceStatus.Failure(reason: reason, output: String(record.log.text.suffix(2_000)))
+        await finish(id, status: .failed(failure))
     }
 
-    private func appendLog(_ text: String, for id: UUID) {
+    private func appendLog(_ text: String, for id: UUID, pid: pid_t) {
+        guard running[id]?.process.pid == pid else { return }
         running[id]?.log.append(text)
         onLog(id)
     }
 
+    private func isCurrent(_ id: UUID, pid: pid_t) -> Bool {
+        guard let record = running[id] else { return false }
+        return record.process.pid == pid && record.termination == nil
+    }
+
     private func discoverPort(for service: Service, process: SpawnedProcess) -> Task<Void, Never> {
-        Task { [weak self] in
-            let discovery = PortDiscovery()
-            do {
-                let listener = try await discovery.waitForPort(
-                    group: process.processGroup,
-                    expected: service.portMode.fixedValue ?? service.expectedPort,
-                    confirm: { await PortDiscovery.confirmHTTP($0, host: service.domain.value) }
-                )
-                // Same check the failure branch makes. A port can confirm just as
-                // stop() tears the process down, and reporting .running then
-                // leaves the interface showing a dead server and pushes a proxy
-                // route to a port nothing is listening on.
-                guard await self?.isRunning(service.id) == true else { return }
-                await self?.report(
-                    .running(pid: process.pid, port: listener.port), for: service.id
-                )
-            } catch {
-                guard await self?.isRunning(service.id) == true else { return }
-                let tail = await self?.log(for: service.id) ?? ""
-                // Torn down before the failure is reported. A record left behind
-                // made `start` return without a word, and a failed service offers
-                // no Stop or Restart, so a server that lost its port to one
-                // started in a terminal could never be started again.
-                await self?.abandon(service.id)
-                await self?.report(
-                    .failed(.init(reason: .noPortDiscovered, output: String(tail.suffix(2_000)))),
-                    for: service.id
-                )
+        Task {
+            let expected = service.portMode.fixedValue ?? service.expectedPort
+            guard let listener = try? await PortDiscovery().waitForHTTP(
+                group: process.processGroup, expected: expected, host: service.domain.value,
+                onSlowStart: { await self.noteSlowStart(for: service.id, pid: process.pid) }
+            ), isCurrent(service.id, pid: process.pid) else {
+                // Stop owns cancellation. The output drain reports a natural exit with its log tail.
+                return
             }
+            onStatus(service.id, .running(pid: process.pid, port: listener.port, family: listener.family))
         }
     }
 
-    private func abandon(_ id: UUID) async {
-        guard let record = running.removeValue(forKey: id) else { return }
-        record.drain?.cancel()
-        await terminate(record, id: id)
+    private func noteSlowStart(for id: UUID, pid: pid_t) {
+        guard isCurrent(id, pid: pid) else { return }
+        onStatus(id, .stillStarting)
     }
 
     /// The group first, then anything still tagged with the service's id, which
@@ -205,23 +186,28 @@ actor ServiceRuntime {
         await ProcessSpawner.terminate(tagged: tag, ProcessInspector().processes(taggedWith: tag))
     }
 
-    private func report(_ status: ServiceStatus, for id: UUID) {
-        onStatus(id, status)
-    }
-
     // MARK: - Stopping
 
     func stop(_ service: Service) async {
-        guard let record = running[service.id] else { return }
-        running[service.id]?.isStopping = true
-        onStatus(service.id, .stopping)
+        await finish(service.id, status: .stopped)
+    }
 
+    private func finish(_ id: UUID, status: ServiceStatus) async {
+        guard let record = running[id] else { return }
+        if let termination = record.termination {
+            await termination.value
+            return
+        }
+        if status == .stopped { onStatus(id, .stopping) }
         record.discovery?.cancel()
         record.drain?.cancel()
-        await terminate(record, id: service.id)
-
-        running[service.id] = nil
-        onStatus(service.id, .stopped)
+        let termination = Task {
+            await terminate(record, id: id)
+            running[id] = nil
+            onStatus(id, status)
+        }
+        running[id]?.termination = termination
+        await termination.value
     }
 
     func restart(_ service: Service, projectName: String) async {
@@ -232,13 +218,7 @@ actor ServiceRuntime {
     /// Stops everything. Called when the app is quitting, so a dev server never
     /// outlives the thing that started it.
     func stopAll() async {
-        for (id, record) in running {
-            running[id]?.isStopping = true
-            record.discovery?.cancel()
-            record.drain?.cancel()
-            await terminate(record, id: id)
-            running[id] = nil
-            onStatus(id, .stopped)
-        }
+        isShuttingDown = true
+        for id in Array(running.keys) { await finish(id, status: .stopped) }
     }
 }

@@ -23,8 +23,8 @@ public struct SpawnRequest: Sendable {
     ///
     /// Through the login shell, in the service directory, because `mise`, `asdf`
     /// and `.nvmrc` all resolve per directory and a single captured PATH gets
-    /// them wrong. `exec` replaces the shell rather than leaving it as an extra
-    /// frame between Localfox and the dev server.
+    /// them wrong. The shell interprets the whole command, including leading
+    /// environment assignments and compound commands.
     public static func devCommand(
         _ command: String,
         in directory: URL,
@@ -33,7 +33,7 @@ public struct SpawnRequest: Sendable {
     ) -> SpawnRequest {
         SpawnRequest(
             executable: shell,
-            arguments: [shell, "-l", "-i", "-c", "exec \(command)"],
+            arguments: [shell, "-l", "-i", "-c", command],
             workingDirectory: directory,
             environment: environment
         )
@@ -202,15 +202,20 @@ public enum ProcessSpawner {
         return signal == 0 ? .exited(code: (status >> 8) & 0xff) : .signalled(signal: signal)
     }
 
-    /// Reaps `pid` if it has exited, waiting up to `limit` for it to. nil while it
-    /// still runs, which is what a server that closed its pipes but stayed up is.
-    public static func reap(_ pid: pid_t, within limit: Duration = .seconds(2)) async -> ServiceStatus.Failure.Reason? {
-        let deadline = ContinuousClock.now.advanced(by: limit)
+    /// A server can close its output long before it exits. An unbounded wait
+    /// follows that child until exit or cancellation by its owner.
+    public static func reap(_ pid: pid_t, within limit: Duration? = .seconds(2)) async -> ServiceStatus.Failure.Reason? {
+        let deadline = limit.map { ContinuousClock.now.advanced(by: $0) }
         repeat {
             var status: Int32 = 0
-            if waitpid(pid, &status, WNOHANG) == pid { return failureReason(waitStatus: status) }
-            try? await Task.sleep(for: .milliseconds(50))
-        } while ContinuousClock.now < deadline
+            let child = waitpid(pid, &status, WNOHANG)
+            if child == pid { return failureReason(waitStatus: status) }
+            if child == -1 && errno != EINTR { return nil }
+            if let deadline, ContinuousClock.now >= deadline { return nil }
+            do {
+                try await Task.sleep(for: .milliseconds(limit == nil ? 250 : 50))
+            } catch { return nil }
+        } while !Task.isCancelled
         return nil
     }
 

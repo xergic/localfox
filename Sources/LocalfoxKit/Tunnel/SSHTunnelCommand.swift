@@ -47,6 +47,7 @@ public enum SSHTunnelCommand {
     public static func request(
         target: SSHTunnelTarget,
         localPort: Int,
+        family: ListeningSocket.AddressFamily = .ipv4,
         workingDirectory: URL = FileManager.default.temporaryDirectory
     ) -> SpawnRequest {
         var arguments = [
@@ -73,10 +74,7 @@ public enum SSHTunnelCommand {
         if target.sshPort != 22 {
             arguments += ["-p", String(target.sshPort)]
         }
-        // 127.0.0.1 and never localhost, for the reason on
-        // `CloudflaredCommand.origin`: localhost resolves to ::1 first, and a
-        // dev server bound to IPv4 only refuses that.
-        arguments += ["-R", "\(target.remotePort):127.0.0.1:\(localPort)"]
+        arguments += ["-R", "\(target.remotePort):\(family.loopbackHost):\(localPort)"]
         arguments.append("\(target.user)@\(target.host)")
 
         return SpawnRequest(

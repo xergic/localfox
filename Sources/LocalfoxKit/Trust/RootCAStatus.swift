@@ -34,7 +34,7 @@ public enum RootCAStatus: Hashable, Sendable {
     /// A Localfox root is trusted, but it is not the one Caddy is issuing from.
     /// Happens when the CA was regenerated and the old root stayed behind.
     case stale(installed: RootCAIdentity, current: RootCAIdentity)
-    case expired(RootCAIdentity)
+    case expired(RootCAIdentity, installed: RootCAIdentity?)
     case trusted(RootCAIdentity, expiresIn: TimeInterval)
 
     /// Whether HTTPS actually works right now for Apple-stack clients.
@@ -49,8 +49,37 @@ public enum RootCAStatus: Hashable, Sendable {
         case let .notInstalled(identity): identity
         case let .installedNotTrusted(identity): identity
         case let .stale(_, current): current
-        case let .expired(identity): identity
+        case let .expired(identity, _): identity
         case let .trusted(identity, _): identity
+        }
+    }
+
+    /// The keychain entry a Remove action should target, including a superseded root.
+    public var removalFingerprint: String? {
+        switch self {
+        case .notGenerated, .notInstalled: nil
+        case let .stale(installed, _): installed.fingerprint
+        case let .expired(_, installed): installed?.fingerprint
+        case let .installedNotTrusted(root), let .trusted(root, _): root.fingerprint
+        }
+    }
+
+    /// Installing can prompt for a password or fail after adding the new item to
+    /// the keychain. Keep the old trust in place until the new settings succeed.
+    /// Cleanup errors are warnings about the superseded root, separate from installation failures.
+    public func install(
+        fingerprint: String,
+        trustCurrent: @Sendable () async throws -> Void,
+        removeSuperseded: @Sendable (String) async throws -> Void
+    ) async throws -> String? {
+        try await trustCurrent()
+        guard let old = removalFingerprint, old != fingerprint else { return nil }
+        do {
+            try await removeSuperseded(old)
+            return nil
+        } catch {
+            return "The new Localfox certificate is trusted. The older certificate (SHA-256 \(old)) "
+                + "could not be removed. \(error.localizedDescription)"
         }
     }
 
@@ -70,11 +99,9 @@ public enum RootCAStatus: Hashable, Sendable {
         /// Nothing to install until Caddy has generated a CA.
         case startProxy
         case install
-        /// Present but untrusted, so remove and add it again rather than
-        /// stacking a second copy.
+        /// Update trust settings for the certificate already in the keychain.
         case reinstall
-        /// Remove the stale root first, by fingerprint, then install the current
-        /// one. Removing by name could delete someone else's CA.
+        /// Trust the current root, then remove the superseded one by fingerprint.
         case repair
         case regenerate
         case none
@@ -108,19 +135,20 @@ public enum RootCAEvaluator {
 
         // Expiry outranks trust: a trust evaluation against an expired root
         // fails anyway, and "expired" is the message that tells the user why.
-        if current.notAfter <= now { return .expired(current) }
-
-        guard installed.contains(where: { $0.fingerprint == current.fingerprint }) else {
-            // A different Localfox root is already in the keychain, so the user
-            // needs that one removed by fingerprint before this one is added.
-            // Installing over the top would leave two roots with one name.
-            if let previous = installed.first {
-                return .stale(installed: previous, current: current)
-            }
-            return .notInstalled(current)
+        if current.notAfter <= now {
+            let matching = installed.first { $0.fingerprint == current.fingerprint }
+            return .expired(current, installed: matching ?? installed.first)
         }
 
-        guard trustEvaluationPassed else { return .installedNotTrusted(current) }
+        let currentInstalled = installed.contains { $0.fingerprint == current.fingerprint }
+        if !currentInstalled || !trustEvaluationPassed {
+            // A cancelled password prompt can leave both certificates installed
+            // but only the old one trusted. Keep its fingerprint for the retry.
+            if let previous = installed.first(where: { $0.fingerprint != current.fingerprint }) {
+                return .stale(installed: previous, current: current)
+            }
+            return currentInstalled ? .installedNotTrusted(current) : .notInstalled(current)
+        }
 
         return .trusted(current, expiresIn: current.notAfter.timeIntervalSince(now))
     }

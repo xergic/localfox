@@ -27,7 +27,7 @@ struct MenuView: View {
         VStack(spacing: 0) {
             header
 
-            if state.needsSetup {
+            if state.needsSetup && state.projects.isEmpty {
                 setupWall
             } else if state.projects.isEmpty {
                 EmptyStateView(
@@ -36,6 +36,7 @@ struct MenuView: View {
                     hint: "Add one from the Localfox window"
                 )
             } else {
+                if state.needsSetup { setupBanner }
                 searchField
                 if visible.isEmpty {
                     EmptyStateView(symbol: "magnifyingglass", message: "No services match \u{201C}\(query)\u{201D}", hint: nil)
@@ -80,6 +81,7 @@ struct MenuView: View {
     }
 
     private func handle(_ press: KeyPress, in ordered: [Service]) -> KeyPress.Result {
+        guard !ordered.isEmpty else { return .ignored }
         switch press.key {
         case .downArrow:
             return moveSelection(by: 1, in: ordered)
@@ -89,12 +91,13 @@ struct MenuView: View {
             guard let service = selection(in: ordered) else { return .ignored }
             if let url = state.url(for: service) {
                 NSWorkspace.shared.open(url)
-            } else if !state.status(of: service).isActive {
-                Task { await state.start(service) }
+                return .handled
             }
+            guard state.status(of: service).canStart else { return .ignored }
+            Task { await state.start(service) }
             return .handled
         case .delete where press.modifiers.contains(.command):
-            guard let service = selection(in: ordered), state.status(of: service).isActive else { return .ignored }
+            guard let service = selection(in: ordered), state.status(of: service).canStop else { return .ignored }
             Task { await state.stop(service) }
             return .handled
         default:
@@ -121,7 +124,7 @@ struct MenuView: View {
 
     private var header: some View {
         AppHeader(stacksSummary: true) {
-            if !state.needsSetup { ServiceSummary() }
+            if !state.projects.isEmpty || !state.needsSetup { ServiceSummary() }
         } trailing: {
             // The helper is approved in System Settings, outside this process,
             // and nothing else re-reads it while only the popover is open.
@@ -147,8 +150,7 @@ struct MenuView: View {
         .background(Theme.toolbarBackground)
     }
 
-    /// Localfox has no unprivileged fallback, so an unapproved helper blocks the
-    /// list rather than quietly serving on a different port.
+    /// New installations have no service controls competing for this space.
     private var setupWall: some View {
         VStack(spacing: 8) {
             Image(systemName: "lock.shield")
@@ -163,21 +165,42 @@ struct MenuView: View {
                 .foregroundStyle(Theme.secondaryText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            ActionButton(title: "Open Setup", symbol: "arrow.up.forward.app", isPrimary: true) {
-                WindowPresenter.showDashboard(openWindow)
-            }
-            .padding(.top, 6)
+            openSetup.padding(.top, 6)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
         .padding(.horizontal, 28)
     }
 
-    private var setupReason: String {
-        if !state.helper.canServe {
-            return "Localfox needs its helper approved before it can serve ports 80 and 443."
+    private var setupBanner: some View {
+        HStack(spacing: 8) {
+            Text(setupReason)
+                .font(.lfDetail)
+                .foregroundStyle(Theme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            openSetup
         }
-        return "Localfox needs its certificate authority trusted before HTTPS will work."
+        .padding(.horizontal, Theme.Metrics.contentInset)
+        .padding(.vertical, 6)
+    }
+
+    private var openSetup: some View {
+        ActionButton(title: "Open Setup", symbol: "arrow.up.forward.app", isPrimary: true) {
+            state.selectedServiceID = nil
+            WindowPresenter.showDashboard(openWindow)
+        }
+    }
+
+    private var setupReason: String {
+        switch state.helper {
+        case .notRegistered: "Install the Localfox helper to enable local HTTPS."
+        case .requiresApproval: "Approve the Localfox helper in System Settings to enable local HTTPS."
+        case .enabledButUnreachable: "The Localfox helper is not responding."
+        case .versionMismatch: "The installed helper needs an update."
+        case .ready(_, false): "The local HTTPS proxy is stopped."
+        case .ready: "Local HTTPS needs a trusted certificate."
+        }
     }
 
     private func list(_ sections: [(project: Project, worktrees: [WorktreeCheckout])], selectedID: UUID?) -> some View {
@@ -410,7 +433,7 @@ struct ProjectSection: View {
     }
 
     private var anyActive: Bool {
-        project.services.contains { state.status(of: $0).isActive }
+        project.services.contains { state.status(of: $0).canStop }
     }
 }
 

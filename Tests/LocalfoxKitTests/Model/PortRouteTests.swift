@@ -49,6 +49,19 @@ struct PortRouteTests {
         #expect(!status.isTransitioning)
     }
 
+    @Test("starting a second copy is unavailable while a service can be stopped")
+    func serviceActions() {
+        let cancellable: [ServiceStatus] = [.starting, .stillStarting, .waiting(port: 3000), .running(pid: 42, port: 3000)]
+        for status in cancellable {
+            #expect(status.canStop)
+            #expect(!status.canStart)
+        }
+        #expect(!ServiceStatus.stopping.canStop)
+        #expect(!ServiceStatus.stopping.canStart)
+        #expect(ServiceStatus.stopped.canStart)
+        #expect(ServiceStatus.failed(.init(reason: .exited(code: 1), output: "")).canStart)
+    }
+
     @Test("a typed port parses only when a route can use it")
     func parsesTypedPort() {
         #expect(Service.routablePort(from: " 8081 ") == 8081)

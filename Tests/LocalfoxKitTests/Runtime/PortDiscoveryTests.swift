@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 import Testing
 @testable import LocalfoxKit
 
@@ -99,6 +100,60 @@ struct PortDiscoveryIntegrationTests {
 
         #expect(found?.port == port)
         #expect(found?.bindsAllInterfaces == false)
+    }
+
+    @Test("discovery skips plain TCP and confirms the lower-ranked IPv6 HTTP listener", .timeLimit(.minutes(1)))
+    func confirmsOnlyHTTP() async throws {
+        let script = """
+        import http.server, socket, socketserver, threading
+        class Raw(socketserver.BaseRequestHandler):
+            def handle(self):
+                self.request.recv(1024)
+                self.request.sendall(b'plain text\\r\\n')
+        class HTTP(http.server.ThreadingHTTPServer):
+            address_family = socket.AF_INET6
+        raw = socketserver.ThreadingTCPServer(('127.0.0.1', 0), Raw)
+        web = HTTP(('::1', 0), http.server.SimpleHTTPRequestHandler)
+        threading.Thread(target=raw.serve_forever, daemon=True).start()
+        print(raw.server_address[1], web.server_port, flush=True)
+        web.serve_forever()
+        """
+        let process = try ProcessSpawner.spawn(SpawnRequest(
+            executable: "/usr/bin/python3", arguments: ["/usr/bin/python3", "-c", script],
+            workingDirectory: FileManager.default.temporaryDirectory, environment: [:]
+        ))
+        defer {
+            _ = kill(-process.processGroup, SIGKILL)
+            _ = waitpid(process.pid, nil, 0)
+        }
+        let line = String(decoding: process.standardOutput.availableData, as: UTF8.self)
+        let ports = line.split(whereSeparator: \.isWhitespace).compactMap { Int($0) }
+        try #require(ports.count == 2)
+        let slowStarts = Mutex(0)
+        let listener = try await PortDiscovery().waitForHTTP(
+            group: process.processGroup, expected: ports[0], host: "web.localhost", slowAfter: .milliseconds(10)
+        ) { slowStarts.withLock { $0 += 1 } }
+        #expect(slowStarts.withLock { $0 } == 1)
+        #expect(listener.port == ports[1])
+        #expect(listener.family == .ipv6)
+    }
+
+    @Test("cancelling an unbounded startup promptly leaves discovery")
+    func cancelStartup() async throws {
+        let process = try ProcessSpawner.spawn(SpawnRequest(
+            executable: "/bin/sleep", arguments: ["/bin/sleep", "10"],
+            workingDirectory: FileManager.default.temporaryDirectory, environment: [:]
+        ))
+        defer {
+            _ = kill(-process.processGroup, SIGKILL)
+            _ = waitpid(process.pid, nil, 0)
+        }
+        let wait = Task {
+            try await PortDiscovery().waitForPort(group: process.processGroup, expected: nil, timeout: nil)
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        wait.cancel()
+        await #expect(throws: CancellationError.self) { try await wait.value }
     }
 
     /// `POSIX_SPAWN_SETSID` is what makes this true, and it is the whole reason

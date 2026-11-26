@@ -33,6 +33,14 @@ public struct GitWorktreeList: Hashable, Sendable {
         return isInsideLinked ? nil : path
     }
 
+    /// A server in another checkout belongs to that checkout. Asking about a service
+    /// in a linked checkout must still consider its own folder and packages.
+    public func otherCheckoutDirectories(for serviceDirectory: URL) -> [URL] {
+        ([main] + linked.map(\.directory)).filter {
+            WorktreeServices.relativePath(of: serviceDirectory, under: $0) == nil
+        }
+    }
+
     /// The first entry is always the main worktree. A `bare` entry has nothing to
     /// run, and a `prunable` one is a worktree whose directory git already knows
     /// is gone.

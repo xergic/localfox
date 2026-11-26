@@ -43,6 +43,7 @@ enum SnapshotFixture {
         }
         let worktreeWeb = worktrees.first?.services.first
 
+        state.worktrees.adoptFixture([projects[0].id: worktrees])
         state.adoptFixture(
             projects,
             statuses: [
@@ -57,7 +58,6 @@ enum SnapshotFixture {
             tunnels: [api.id: .live(URL(string: "https://example.trycloudflare.com")!)],
             logs: [api.id: apiLog]
         )
-        state.worktrees.adoptFixture([projects[0].id: worktrees])
         state.lastResponses.record(response(200, "/", "wishfox.localhost", ms: 18), for: web.id)
         state.lastResponses.record(response(500, "/wishlists", "api.wishfox.localhost", ms: 241), for: api.id)
         return (state, api.id)

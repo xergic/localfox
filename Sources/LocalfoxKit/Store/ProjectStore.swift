@@ -32,6 +32,7 @@ public enum StoreError: Error, Equatable, Sendable, LocalizedError {
     case malformed(path: String, underlying: String)
     case fromTheFuture(path: String, found: Int, supported: Int)
     case unwritable(path: String, underlying: String)
+    case projectChanged
     case duplicateDomain(String)
     case refusingToOverwrite(path: String)
 
@@ -49,6 +50,8 @@ public enum StoreError: Error, Equatable, Sendable, LocalizedError {
             """
         case let .unwritable(path, underlying):
             "Could not save the Localfox configuration to \(path). \(underlying)"
+        case .projectChanged:
+            "This project changed while it was open. Reopen it and try again."
         case let .duplicateDomain(domain):
             "\(domain) is already used by another service. Every domain must be unique."
         case let .refusingToOverwrite(path):
@@ -127,9 +130,22 @@ public actor ProjectStore {
     public func save(_ projects: [Project]) throws {
         guard !loadFailed else { throw StoreError.refusingToOverwrite(path: url.path) }
         try Self.assertDomainsAreUnique(in: projects)
-        document.projects = projects
-        document.version = StoreDocument.requiredVersion(for: projects)
-        try write()
+        let updated = StoreDocument(version: StoreDocument.requiredVersion(for: projects), projects: projects)
+        try write(updated)
+        document = updated
+    }
+
+    /// Apply a single edit against the latest list, preserving concurrent edits to other projects.
+    public func update(id: UUID, from previous: Project?, to edited: Project?) throws {
+        var projects = document.projects
+        let index = projects.firstIndex { $0.id == id }
+        guard index.map({ projects[$0] }) == previous else { throw StoreError.projectChanged }
+        if let index {
+            if let edited { projects[index] = edited } else { projects.remove(at: index) }
+        } else if let edited {
+            projects.append(edited)
+        }
+        try save(projects)
     }
 
     /// Two services answering the same domain would make the proxy's behaviour
@@ -146,7 +162,7 @@ public actor ProjectStore {
         }
     }
 
-    private func write() throws {
+    private func write(_ document: StoreDocument) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
 

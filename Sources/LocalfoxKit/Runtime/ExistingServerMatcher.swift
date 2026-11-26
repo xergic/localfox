@@ -4,11 +4,13 @@ import Foundation
 public struct ExistingServer: Hashable, Sendable {
     public let pid: pid_t
     public let port: Int
+    public let family: ListeningSocket.AddressFamily
     public let executableName: String
 
-    public init(pid: pid_t, port: Int, executableName: String) {
+    public init(pid: pid_t, port: Int, executableName: String, family: ListeningSocket.AddressFamily = .ipv4) {
         self.pid = pid
         self.port = port
+        self.family = family
         self.executableName = executableName
     }
 }
@@ -51,34 +53,35 @@ public enum ExistingServerMatcher {
 
     /// - Parameter processGroup: Group of a pid, read only for listeners that
     ///   survive the cheaper checks.
-    /// - Returns: At most one entry per port, lowest port first.
+    /// - Returns: Each distinct listener, lowest port first. IPv4 wins ties.
     public static func servers(
         sockets: [ListeningSocket],
         tree: ProcessTree,
         scope: Scope,
         processGroup: (pid_t) -> pid_t?
     ) -> [ExistingServer] {
-        var byPort: [Int: ExistingServer] = [:]
+        var found: Set<ExistingServer> = []
         for socket in sockets
-        where Service.isRoutablePort(socket.port) && socket.port < PortDiscovery.ephemeralFloor
-            && !scope.excludedPorts.contains(socket.port) {
+        where socket.isLocallyReachable && Service.isRoutablePort(socket.port) && socket.port < PortDiscovery.ephemeralFloor
+            && !PortDiscovery.debuggerPorts.contains(socket.port) && !scope.excludedPorts.contains(socket.port) {
             guard let process = tree.process(socket.pid), process.uid == scope.ownUID,
                   isInside(scope, of: process, tree: tree)
             else { continue }
             if let group = processGroup(socket.pid), scope.ownedGroups.contains(group) { continue }
-            let server = ExistingServer(pid: process.pid, port: socket.port, executableName: process.executableName)
-            // Both address families of one listener, or two processes sharing a
-            // port, must read as one row. The lowest pid is the older one.
-            if let known = byPort[socket.port], known.pid <= server.pid { continue }
-            byPort[socket.port] = server
+            found.insert(ExistingServer(
+                pid: process.pid, port: socket.port, executableName: process.executableName, family: socket.family
+            ))
         }
-        return byPort.values.sorted { $0.port < $1.port }
+        return found.sorted {
+            if $0.port != $1.port { return $0.port < $1.port }
+            if $0.family != $1.family { return $0.family == .ipv4 }
+            return $0.pid < $1.pid
+        }
     }
 
-    /// The lowest port, unless a higher one is the only one that answers HTTP. A
-    /// debugger or an inspector port opens beside the server and is not one.
-    public static func preferred(from servers: [ExistingServer], answeringHTTP: Set<Int>) -> ExistingServer? {
-        servers.first { answeringHTTP.contains($0.port) } ?? servers.first
+    /// Keep the ranking from the scan while preserving the family and process that answered.
+    public static func preferred(from servers: [ExistingServer], confirmed: Set<ExistingServer>) -> ExistingServer? {
+        servers.first(where: confirmed.contains)
     }
 
     /// The listener's own cwd first, then its ancestors', nearest first. `pnpm`
@@ -96,8 +99,8 @@ public enum ExistingServerMatcher {
 
     /// nil when the path is outside the folder and says nothing either way.
     private static func verdict(_ scope: Scope, _ path: String?) -> Bool? {
-        guard contains(scope.directory, path) else { return nil }
-        return !scope.excludedDirectories.contains { contains($0, path) }
+        if scope.excludedDirectories.contains(where: { contains($0, path) }) { return false }
+        return contains(scope.directory, path) ? true : nil
     }
 
     private static func contains(_ directory: String, _ path: String?) -> Bool {

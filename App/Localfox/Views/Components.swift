@@ -93,7 +93,7 @@ struct ServiceSummary: View {
             case .stopped where worktreeIDs.contains(service.id): break
             case .stopped: stopped += 1
             case .failed: failed += 1
-            case .starting, .stopping: break
+            case .starting, .stillStarting, .stopping: break
             }
             if state.tunnel(of: service).isLive { shared += 1 }
         }

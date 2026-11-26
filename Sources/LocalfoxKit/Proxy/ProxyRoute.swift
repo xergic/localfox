@@ -3,18 +3,20 @@ import Foundation
 /// A validated mapping from a local HTTPS domain to a loopback development port.
 ///
 /// There is deliberately no upstream-host field: the privileged helper derives
-/// every dial address from `port`, so an XPC client cannot express a non-local
+/// every dial address from a closed family enum and port. An XPC client cannot express a non-local
 /// destination.
 public struct ProxyRoute: Hashable, Codable, Sendable, Identifiable {
     public let id: String
     public let domain: LocalDomain
     public let port: Int
+    public let family: ListeningSocket.AddressFamily
 
-    public init?(id: String, domain: LocalDomain, port: Int) {
+    public init?(id: String, domain: LocalDomain, port: Int, family: ListeningSocket.AddressFamily = .ipv4) {
         guard Self.isValidID(id), Self.isValidPort(port) else { return nil }
         self.id = id
         self.domain = domain
         self.port = port
+        self.family = family
     }
 
     /// Creates a route with a compact, URL-safe identifier derived from a UUID.
@@ -55,6 +57,7 @@ public struct ProxyRoute: Hashable, Codable, Sendable, Identifiable {
         self.id = id
         self.domain = domain
         self.port = port
+        family = try container.decodeIfPresent(ListeningSocket.AddressFamily.self, forKey: .family) ?? .ipv4
     }
 
     public static func isValidID(_ id: String) -> Bool {

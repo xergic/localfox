@@ -42,15 +42,8 @@ struct DashboardContent: View {
     @Environment(AppState.self) private var state
 
     var scrolls = true
-    @State private var selection: UUID?
     @State private var isAddingProject = false
     @State private var isAddingRoute = false
-
-    /// `initialSelection` exists for the snapshot, which has no pointer to pick a row with.
-    init(scrolls: Bool = true, initialSelection: UUID? = nil) {
-        self.scrolls = scrolls
-        _selection = State(initialValue: initialSelection)
-    }
 
     var body: some View {
         @Bindable var state = state
@@ -118,7 +111,8 @@ struct DashboardContent: View {
     }
 
     private var sidebar: some View {
-        VStack(spacing: 0) {
+        @Bindable var state = state
+        return VStack(spacing: 0) {
             if state.projects.isEmpty {
                 VStack(spacing: 10) {
                     EmptyStateView(
@@ -143,7 +137,7 @@ struct DashboardContent: View {
                             ProjectSection(
                                 project: project,
                                 worktrees: state.worktrees.checkouts(for: project.id),
-                                selection: $selection,
+                                selection: $state.selectedServiceID,
                                 showsHoverActions: false,
                                 showsRemove: true,
                                 showsEdit: true
@@ -176,6 +170,7 @@ struct DashboardContent: View {
                     ErrorBanner(message: error) { state.clearError() }
                 }
                 if let (project, service) = selected {
+                    ActionButton(title: "Local HTTPS", symbol: "chevron.left") { state.selectedServiceID = nil }
                     ServiceDetailPane(
                         service: service,
                         project: project,
@@ -195,7 +190,7 @@ struct DashboardContent: View {
     }
 
     private var selected: (project: Project, service: Service)? {
-        guard let selection, let service = state.service(id: selection),
+        guard let selection = state.selectedServiceID, let service = state.service(id: selection),
               let project = state.project(owning: selection) else { return nil }
         return (project, service)
     }
@@ -206,6 +201,7 @@ private struct SetupCard: View {
     @Environment(AppState.self) private var state
 
     var body: some View {
+        let blocker = HelperIdentity.registrationBlocker()
         DetailCard(title: "Local HTTPS") {
             VStack(alignment: .leading, spacing: 10) {
                 LabeledRow(label: "Helper", value: helperText, valueFont: .lfDetail, tint: helperTint)
@@ -218,15 +214,15 @@ private struct SetupCard: View {
                         .foregroundStyle(Theme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
-                    if let blocker = HelperIdentity.registrationBlocker() {
+                    if let blocker {
                         CardDivider()
                         Label(blocker.message, systemImage: "exclamationmark.triangle")
                             .font(.lfDetail)
                             .foregroundStyle(Theme.warning)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    actions
                 }
+                actions(registrationBlocked: blocker != nil).disabled(state.isChangingCertificate)
                 if let fingerprint = state.trust.identity?.fingerprint {
                     CardDivider()
                     LabeledRow(label: "Fingerprint", value: Self.grouped(fingerprint))
@@ -237,13 +233,14 @@ private struct SetupCard: View {
 
     /// One action per state, matching the remedy the state machine reports.
     @ViewBuilder
-    private var actions: some View {
+    private func actions(registrationBlocked: Bool) -> some View {
         HStack(spacing: 8) {
             switch state.helper {
             case .notRegistered:
                 ActionButton(title: "Install Helper", symbol: "arrow.down.circle", isPrimary: true) {
                     Task { await state.installHelper() }
                 }
+                .disabled(registrationBlocked)
             case .requiresApproval:
                 ActionButton(title: "Approve in System Settings", symbol: "gearshape", isPrimary: true) {
                     state.openHelperApproval()
@@ -252,6 +249,9 @@ private struct SetupCard: View {
                 ActionButton(title: "Reinstall Helper", symbol: "arrow.clockwise", isPrimary: true) {
                     Task { await state.reinstallHelper() }
                 }
+                .disabled(registrationBlocked)
+            case .ready where !state.helper.isProxyRunning && state.trust.remedy != .regenerate:
+                retrySetup
             case .ready:
                 switch state.trust.remedy {
                 case .install:
@@ -260,18 +260,16 @@ private struct SetupCard: View {
                     }
                 case .reinstall, .repair, .regenerate:
                     ActionButton(title: "Repair Certificate", symbol: "wrench", isPrimary: true) {
-                        Task { await state.repairCertificate() }
+                        Task { await state.installCertificate() }
                     }
                 case .startProxy:
-                    Text("Start a service to create the certificate authority.")
-                        .font(.lfDetail)
-                        .foregroundStyle(Theme.tertiaryText)
+                    retrySetup
                 case .none:
                     EmptyView()
                 }
             }
 
-            if state.trust.identity != nil {
+            if state.trust.removalFingerprint != nil {
                 ActionButton(title: "Remove", tint: Theme.danger) {
                     Task { await state.removeCertificate() }
                 }
@@ -279,6 +277,13 @@ private struct SetupCard: View {
             Spacer(minLength: 0)
         }
         .padding(.top, 4)
+    }
+
+    private var retrySetup: some View {
+        ActionButton(title: "Retry HTTPS Setup", symbol: "arrow.clockwise", isPrimary: true) {
+            state.clearError()
+            Task { await state.refreshSetup(syncExistingRoutes: true) }
+        }
     }
 
     /// Grouped in fours, because a user comparing this against Keychain Access
@@ -330,6 +335,9 @@ private struct SetupCard: View {
             Its helper runs as a background service you approve once in System \
             Settings under Login Items & Extensions.
             """
+        }
+        if !state.helper.isProxyRunning {
+            return "The helper is ready. Retry HTTPS setup to start the proxy on ports 80 and 443."
         }
         return """
         Localfox issues certificates from its own local authority. Trusting it \

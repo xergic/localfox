@@ -65,6 +65,16 @@ struct ExistingServerMatcherTests {
         #expect(found.map(\.port) == [3000])
     }
 
+    @Test("a server in a sibling checkout stays excluded even when its launcher belongs to this checkout")
+    func siblingWorktreeWithLocalLauncher() {
+        let sibling = Self.project + "-sibling"
+        let processes = [
+            Self.process(20, name: "pnpm", cwd: Self.project),
+            Self.process(10, parent: 20, name: "node", cwd: sibling)
+        ]
+        #expect(match(processes, [Self.socket(10, 5173)], excludedDirectories: [sibling]).isEmpty)
+    }
+
     @Test("a sibling folder that only shares the prefix does not match")
     func siblingPrefix() {
         let found = match([Self.process(10, name: "node", cwd: Self.project + "-other")], [Self.socket(10, 3000)])
@@ -152,9 +162,9 @@ struct ExistingServerMatcherTests {
         #expect(found.isEmpty)
     }
 
-    @Test("ports 80, 443 and the ephemeral range are ignored")
+    @Test("proxy ports, debugger ports and the ephemeral range are ignored")
     func portsThatCannotBeRouted() {
-        let sockets = [80, 443, 49_151, 49_152, 60_000].map { Self.socket(10, $0) }
+        let sockets = [80, 443, 5858, 9229, 9230, 49_151, 49_152, 60_000].map { Self.socket(10, $0) }
 
         let found = match([Self.process(10, name: "node", cwd: Self.project)], sockets)
 
@@ -172,28 +182,22 @@ struct ExistingServerMatcherTests {
         #expect(found.map(\.port) == [3001])
     }
 
-    @Test("both address families of one listener are one entry, lowest port first")
+    @Test("separate address families survive until HTTP confirmation, lowest port first")
     func dedupeAndOrder() {
         let found = match(
             [Self.process(10, name: "node", cwd: Self.project)],
             [Self.socket(10, 5173), Self.socket(10, 3000), Self.socket(10, 3000, family: .ipv6)]
         )
 
-        #expect(found.map(\.port) == [3000, 5173])
+        #expect(found.map(\.port) == [3000, 3000, 5173])
+        #expect(found.map(\.family) == [.ipv4, .ipv6, .ipv4])
     }
 
-    @Test("the lowest port wins when none answers HTTP")
-    func lowestPort() {
-        let servers = [3000, 9229].map { ExistingServer(pid: 10, port: $0, executableName: "node") }
-
-        #expect(ExistingServerMatcher.preferred(from: servers, answeringHTTP: [])?.port == 3000)
-    }
-
-    @Test("a server that answers HTTP beats a lower port that does not")
-    func httpBeatsLowerPort() {
-        let servers = [3000, 5173].map { ExistingServer(pid: 10, port: $0, executableName: "node") }
-
-        #expect(ExistingServerMatcher.preferred(from: servers, answeringHTTP: [5173])?.port == 5173)
-        #expect(ExistingServerMatcher.preferred(from: [], answeringHTTP: [5173]) == nil)
+    @Test("the selected server is the exact process and address family that answered HTTP")
+    func choosesConfirmedEndpoint() {
+        let raw = ExistingServer(pid: 10, port: 3000, executableName: "worker")
+        let web = ExistingServer(pid: 11, port: 3000, executableName: "node", family: .ipv6)
+        #expect(ExistingServerMatcher.preferred(from: [raw, web], confirmed: [web]) == web)
+        #expect(ExistingServerMatcher.preferred(from: [raw], confirmed: []) == nil)
     }
 }

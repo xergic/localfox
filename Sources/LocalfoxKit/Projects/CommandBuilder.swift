@@ -45,11 +45,16 @@ public enum CommandBuilder {
         in command: String,
         style: PortFlagStyle
     ) -> (command: String, environment: [String: String]) {
-        switch style {
+        let words = command.split(whereSeparator: \.isWhitespace)
+        let needsSeparator = words.first == "npm"
+            && words.dropFirst().first.map { ["run", "run-script", "start"].contains($0) } == true
+            && !words.contains("--")
+        let commandWithFlags = needsSeparator ? command + " --" : command
+        return switch style {
         case .dashP:
-            (command + " -p \(port)", [:])
+            (commandWithFlags + " -p \(port)", [:])
         case .doubleDashPort:
-            (command + " --port \(port)", [:])
+            (commandWithFlags + " --port \(port)", [:])
         case .environmentPORT:
             (command, ["PORT": String(port)])
         case .environmentNamed:

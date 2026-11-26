@@ -143,12 +143,12 @@ Binding ports 80 and 443 requires root. Localfox registers a LaunchDaemon throug
 
 There is no unprivileged fallback. Serving on `:8443` would break the one promise the
 product makes, and people would hardcode the port into their configs. Until the helper is
-approved, the app shows a setup wall.
+approved, the app shows setup instructions. Existing services stay accessible from the
+menu bar so you can stop them or open their logs while local HTTPS is unavailable.
 
-The helper never receives a Caddy config. It receives typed `{ id, domain, port }` values
-and builds the config itself, so a non-loopback upstream is not expressible across the
-boundary rather than merely rejected. Every connecting client is checked against a code
-signing requirement pinned to the bundle ID and Team ID.
+The helper receives each route’s ID, domain, port and loopback address family. It builds
+the Caddy config and chooses the corresponding numeric loopback address. Every connecting
+client is checked against a code signing requirement pinned to the bundle ID and Team ID.
 
 ## Port routes
 
@@ -164,8 +164,7 @@ While the port accepts connections, the route shows as running and the domain se
 While it does not, the route shows as waiting and the domain is not served. Localfox checks
 every two seconds.
 
-The check dials `127.0.0.1`, because the proxy does. A server that listens on `::1` only
-will show as waiting. Bind it to `127.0.0.1` too.
+Localfox checks both `127.0.0.1` and `::1` and routes to the address that answered.
 
 Quitting Localfox clears every route from the proxy, even though the servers behind them
 keep running. A route cannot be shared publicly yet.
@@ -185,8 +184,8 @@ saved. **Stop** removes the domain and never signals the server. When the port s
 answering, the service returns to stopped. **Start Another Copy** starts the service as usual.
 
 Localfox matches the folder of the server, or of the `pnpm` or `npm` that launched it. It
-ignores ports 80, 443 and above 49151. With several matches it takes the lowest port, or a
-higher one if only that one answers HTTP. It checks only your own processes.
+ignores ports 80, 443, common debugger ports, and ports above 49151. It checks only your own processes and offers a
+listener that answers HTTP in the selected checkout.
 
 ## Worktrees
 
@@ -248,9 +247,8 @@ into the project's edit sheet. You get a stable address that survives a restart,
 of the quick tunnel's limits. The token is stored in your Keychain and passed to
 `cloudflared` through the environment, never on the command line.
 
-A named tunnel is managed by Cloudflare, so the origin lives in your dashboard rather than
-in Localfox. That means the service needs a **fixed port**, and Localfox refuses a named
-share on a service set to Auto rather than publishing whatever last held the port.
+In **Edit Project**, enter the port from your Cloudflare origin in the service’s **Fixed port**
+field. Localfox checks that the service actually bound that port before opening a named share.
 
 **SSH tunnel.** If you have a VPS, Localfox can run `ssh -N -R` to it and let the share
 answer there. Nothing goes through a third party. The remote `sshd` needs `GatewayPorts
@@ -267,9 +265,8 @@ directly, with no authentication in front of it: your source maps, your `.env` v
 every API route. Sharing stops when the service stops and when Localfox quits, and is
 never restored on relaunch, whichever mode you used.
 
-A Cloudflare tunnel dials `127.0.0.1:<port>` directly rather than going through the proxy,
-so it works before the helper is installed and does not depend on the certificate being
-trusted. For a quick tunnel Localfox rewrites the origin `Host` header to
+A quick tunnel connects directly to the service’s IPv4 or IPv6 loopback address, so it
+works independently of local HTTPS setup. Localfox rewrites the origin `Host` header to
 `localhost:<port>` by default, which is what stops Vite and Next rejecting the request as
 an unknown host. Turn that off in Preferences if your app builds absolute URLs from the
 header, such as Django's `ALLOWED_HOSTS` or an OAuth callback. A named tunnel takes that

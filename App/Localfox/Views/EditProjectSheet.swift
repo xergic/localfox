@@ -19,6 +19,8 @@ struct EditProjectSheet: View {
     @State private var isPickingIcon = false
     @State private var pendingRestarts: [Service] = []
     @State private var isConfirmingRestart = false
+    @State private var isSaving = false
+    @State private var saveError: String?
 
     init(project: Project) {
         self.project = project
@@ -33,7 +35,7 @@ struct EditProjectSheet: View {
     /// straight back puts it in the view hierarchy for no gain. A row that still
     /// holds the placeholder is a row the user did not touch, which is how `save`
     /// knows to leave the Keychain alone.
-    static let tokenPlaceholder = "••••••••"
+    nonisolated static let tokenPlaceholder = "••••••••"
 
     /// The SSH block of the edit sheet, still as typed.
     ///
@@ -67,7 +69,9 @@ struct EditProjectSheet: View {
             let resolved = address.isEmpty
                 ? SSHTunnelTarget.defaultPublicURL(host: host, remotePort: remote)
                 : URL(string: address.contains("://") ? address : "http://\(address)")
-            guard let resolved, resolved.host != nil else { return nil }
+            guard let resolved, let hostname = resolved.host, !hostname.isEmpty,
+                  ["http", "https"].contains(resolved.scheme?.lowercased()),
+                  resolved.user == nil, resolved.password == nil else { return nil }
 
             let key = keyPath.trimmingCharacters(in: .whitespaces)
             return SSHTunnelTarget(
@@ -82,7 +86,7 @@ struct EditProjectSheet: View {
 
         /// True once the user has started filling this block in.
         var isTouched: Bool {
-            [host, user, remotePort].contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            [host, user, sshPort, remotePort, keyPath, publicURL].contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         }
 
         init(_ target: SSHTunnelTarget? = nil) {
@@ -94,22 +98,6 @@ struct EditProjectSheet: View {
             keyPath = target.keyPath ?? ""
             publicURL = target.publicURL.absoluteString
         }
-    }
-
-    /// Accepts a bare hostname as well as a URL, because the Cloudflare
-    /// dashboard shows a public hostname as `share.example.com` and that is what
-    /// a user pastes.
-    static func url(from text: String) -> URL? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
-        guard let url = URL(string: candidate),
-              url.scheme == "https",
-              let host = url.host,
-              host.contains("."),
-              !host.hasSuffix(".localhost")
-        else { return nil }
-        return url
     }
 
     /// A service the user is still editing. Separate from `Service` so a
@@ -129,10 +117,23 @@ struct EditProjectSheet: View {
         var namedToken = ""
         /// The SSH reverse tunnel, blank for none.
         var ssh = SSHFields()
-        /// Whether this service can use a named tunnel at all. Cloudflare owns
-        /// the origin for one, so the port has to be written down rather than
-        /// discovered.
-        let hasFixedPort: Bool
+        var hasLaunchTarget: Bool {
+            kind == .portRoute ? Service.routablePort(from: port) != nil : !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        var sharingError: String? {
+            let hostname = namedHostname.trimmingCharacters(in: .whitespacesAndNewlines)
+            let token = namedToken.trimmingCharacters(in: .whitespacesAndNewlines)
+            if hostname.isEmpty {
+                if !token.isEmpty, token != EditProjectSheet.tokenPlaceholder { return "Enter the hostname for this token" }
+            } else {
+                guard TunnelTargets.url(from: hostname) != nil else { return "Enter a public HTTPS hostname" }
+                guard Service.routablePort(from: port) != nil else { return "Enter a fixed port for this tunnel" }
+                guard !token.isEmpty else { return "Enter the tunnel token" }
+            }
+            return nil
+        }
+
         /// What the domain was when the sheet opened. A rename only moves a row
         /// still sitting on its generated name, and this is how that is judged.
         let originalDomain: String
@@ -148,7 +149,6 @@ struct EditProjectSheet: View {
             port = service.portMode.fixedValue.map(String.init) ?? ""
             isNew = false
             originalDomain = service.domain.value
-            hasFixedPort = service.portMode.fixedValue != nil
         }
 
         private init(newRouteID id: UUID) {
@@ -162,7 +162,6 @@ struct EditProjectSheet: View {
             port = ""
             isNew = true
             originalDomain = ""
-            hasFixedPort = true
         }
 
         static func newRoute() -> EditableService { EditableService(newRouteID: UUID()) }
@@ -188,13 +187,16 @@ struct EditProjectSheet: View {
                 .padding(14)
             }
             Divider().overlay(Theme.separator)
+            if let saveError { ErrorBanner(message: saveError) }
             footer
         }
+        .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
         .frame(width: 620, height: 560)
         .background(Theme.background)
         .themedSurface(state.appearance.colorScheme)
         .onAppear(perform: loadTunnelTargets)
-        .alert("Restart to use the new domain?", isPresented: $isConfirmingRestart) {
+        .alert("Restart to apply the changes?", isPresented: $isConfirmingRestart) {
             Button("Not Now", role: .cancel) { dismiss() }
             Button("Restart") {
                 let services = pendingRestarts
@@ -328,13 +330,11 @@ struct EditProjectSheet: View {
             !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
                 && LocalDomain($0.domain) != nil
                 && clash(for: $0) == nil
-                && hasValidPort($0)
+                && AddRouteSheet.portError(for: $0.port) == nil
+                && $0.hasLaunchTarget
+                && $0.sharingError == nil
+                && (!$0.ssh.isTouched || $0.ssh.target != nil)
         }
-    }
-
-    private func hasValidPort(_ row: EditableService) -> Bool {
-        guard row.kind == .portRoute else { return true }
-        return Service.routablePort(from: row.port) != nil
     }
 
     private func clash(for row: EditableService) -> String? {
@@ -349,6 +349,7 @@ struct EditProjectSheet: View {
     // MARK: - Saving
 
     private func save() {
+        guard canSave, !isSaving else { return }
         var edited = project
         edited.name = projectName.trimmingCharacters(in: .whitespaces)
         edited.iconPath = iconPath.map { edited.iconPathValue(for: URL(fileURLWithPath: $0)) }
@@ -365,47 +366,47 @@ struct EditProjectSheet: View {
             updated.name = name
             updated.command = row.command
             updated.domain = domain
-            if row.kind == .portRoute, let port { updated.portMode = .fixed(port) }
+            updated.portMode = port.map(PortMode.fixed) ?? .auto
             return updated
         }
 
-        saveTunnelTargets()
-
+        isSaving = true
+        let changes = rows.compactMap(tunnelChange)
         Task {
-            let moved = await state.apply(edited)
-            guard !moved.isEmpty else {
-                dismiss()
-                return
+            defer { isSaving = false }
+            do {
+                let moved = try await state.apply(edited, replacing: project, sharingChanges: changes)
+                if moved.isEmpty {
+                    dismiss()
+                } else {
+                    pendingRestarts = moved
+                    isConfirmingRestart = true
+                }
+            } catch {
+                saveError = error.localizedDescription
             }
-            pendingRestarts = moved
-            isConfirmingRestart = true
         }
     }
 
-    /// A blank hostname clears both halves, because a token kept for a share
-    /// that can never start is a credential held for nothing.
-    private func saveTunnelTargets() {
-        for row in rows where row.kind == .command {
-            let hostname = row.namedHostname.trimmingCharacters(in: .whitespaces)
-            if hostname.isEmpty {
-                state.tunnelTargets.clearNamed(for: row.id)
-            } else {
-                state.tunnelTargets.setNamed(
-                    hostname: hostname,
-                    // nil leaves the stored token untouched, which is what an
-                    // unedited placeholder means.
-                    token: row.namedToken == Self.tokenPlaceholder ? nil : row.namedToken,
-                    for: row.id
-                )
-            }
-            state.tunnelTargets.setSSH(row.ssh.target, for: row.id)
+    /// Keep an unchanged masked credential out of both the view and the save.
+    private func tunnelChange(for row: EditableService) -> TunnelTargets.Change? {
+        guard row.kind == .command else { return nil }
+        let previous = state.tunnelTargets.hostname(for: row.id)
+        let hostname = TunnelTargets.url(from: row.namedHostname)
+        let token: String?
+        if hostname == nil {
+            token = previous == nil ? nil : ""
+        } else {
+            token = row.namedToken == Self.tokenPlaceholder ? nil : row.namedToken.trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        let ssh = row.ssh.target
+        guard token != nil || hostname != previous || ssh != state.tunnelTargets.ssh(for: row.id) else { return nil }
+        return .init(id: row.id, hostname: hostname, token: token, ssh: ssh)
     }
 
     private var restartMessage: String {
         let names = pendingRestarts.map(\.name).joined(separator: ", ")
-        return "\(names) \(pendingRestarts.count == 1 ? "is" : "are") still running on the old domain. "
-            + "Localfox passes the domain to a service when it starts, so it needs a restart to use the new one."
+        return "Restart \(names) to use the updated domain or port."
     }
 
     /// Scanned on click rather than on redraw, because this sheet redraws on
@@ -453,6 +454,10 @@ private struct ServiceEditor: View {
                     )
                 } else {
                     LabelledField(label: "Command", text: $row.command, monospaced: true)
+                    LabelledField(
+                        label: "Fixed port (blank for Auto)", text: $row.port, monospaced: true,
+                        error: AddRouteSheet.portError(for: row.port)
+                    )
                 }
                 LabelledField(label: "Domain", text: $row.domain, monospaced: true, error: fieldError)
                 if !isRoute {
@@ -475,7 +480,7 @@ private struct ServiceEditor: View {
             label: "Cloudflare hostname",
             text: $row.namedHostname,
             monospaced: true,
-            error: hostnameError
+            error: row.sharingError
         )
         LabelledField(label: "Tunnel token", text: $row.namedToken, isSecure: true)
         Text(hint)
@@ -519,22 +524,10 @@ private struct ServiceEditor: View {
     /// is the normal state for most services.
     private var sshError: String? {
         guard row.ssh.isTouched, row.ssh.target == nil else { return nil }
-        return "Needs host, user and remote port"
+        return "Enter the host, user, valid ports and an HTTP or HTTPS public address"
     }
 
-    private var hostnameError: String? {
-        let trimmed = row.namedHostname.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return nil }
-        if TunnelTargets.url(from: trimmed) == nil { return "Must be a public hostname" }
-        return row.hasFixedPort ? nil : "Needs a fixed port"
-    }
-
-    /// The field carries "Needs a fixed port" on its own, so this explains why
-    /// rather than repeating it.
     private var hint: String {
-        guard row.hasFixedPort else {
-            return "A named tunnel takes its origin from your Cloudflare dashboard."
-        }
         return """
         Create the tunnel in Cloudflare Zero Trust, point its public hostname \
         at http://localhost:<port>, then paste the tunnel token here. Leave \

@@ -132,7 +132,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// process groups are gone, because `NSApplication` would otherwise exit
     /// while the children are still being signalled.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let state = AppDelegate.state, !isTerminating else { return .terminateNow }
+        guard let state = AppDelegate.state else { return .terminateNow }
+        guard !isTerminating else { return .terminateLater }
         isTerminating = true
         Task { @MainActor in
             await state.stopEverything()

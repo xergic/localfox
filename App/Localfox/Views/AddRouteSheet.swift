@@ -49,6 +49,9 @@ struct AddRouteSheet: View {
             && parsedPort != nil
     }
 
+    @State private var saveError: String?
+    @State private var isSaving = false
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -75,8 +78,11 @@ struct AddRouteSheet: View {
                 .padding(16)
             }
             Divider().overlay(Theme.separator)
+            if let saveError { ErrorBanner(message: saveError) }
             footer
         }
+        .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
         .frame(width: 620, height: 560)
         .background(Theme.background)
         .themedSurface(state.appearance.colorScheme)
@@ -166,7 +172,16 @@ struct AddRouteSheet: View {
               let route = Service.portRoute(name: name.trimmingCharacters(in: .whitespaces),
                                             domain: value, port: parsedPort, directory: directory)
         else { return }
-        state.add(Project(name: route.name, directory: directory, services: [route]))
-        dismiss()
+        let project = Project(name: route.name, directory: directory, services: [route])
+        isSaving = true
+        Task {
+            defer { isSaving = false }
+            do {
+                try await state.add(project)
+                dismiss()
+            } catch {
+                saveError = error.localizedDescription
+            }
+        }
     }
 }

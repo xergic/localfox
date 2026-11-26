@@ -7,7 +7,7 @@ extension ServiceStatus {
     var tint: Color {
         switch self {
         case .running: Theme.success
-        case .starting, .stopping: Theme.accentText
+        case .starting, .stillStarting, .stopping: Theme.accentText
         case .failed: Theme.danger
         case .stopped: Theme.secondaryText
         case .waiting: Theme.accentText
@@ -18,7 +18,8 @@ extension ServiceStatus {
         switch self {
         case .stopped: "Stopped"
         case .starting: "Starting"
-        case let .running(_, port): ":\(port)"
+        case .stillStarting: "Still starting"
+        case let .running(_, port, _): ":\(port)"
         case .stopping: "Stopping"
         case .waiting: "Waiting"
         case .failed: "Failed"

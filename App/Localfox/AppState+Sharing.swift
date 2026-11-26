@@ -19,8 +19,8 @@ extension AppState {
     /// bound it, and a tunnel to a port nothing is listening on serves 502s
     /// under a URL the user has already sent to somebody.
     func share(_ service: Service) async {
-        guard case let .running(_, port) = status(of: service) else { return }
-        await share(service, plan: .quick(port: port, rewritesHost: preferences.rewritesHostHeader))
+        guard case let .running(_, port, family) = status(of: service) else { return }
+        await share(service, plan: .quick(port: port, rewritesHost: preferences.rewritesHostHeader, family: family))
     }
 
     /// Opens the named tunnel configured for this service.
@@ -30,13 +30,24 @@ extension AppState {
     /// written down there; under Auto the dev server can bind a different one
     /// and the share would point at whatever last held it.
     func shareNamed(_ service: Service) async {
-        guard let hostname = tunnelTargets.hostname(for: service.id),
-              let token = tunnelTargets.token(for: service.id) else {
+        let storedToken: String?
+        do {
+            storedToken = try tunnelTargets.token(for: service.id)
+        } catch {
+            report(error.localizedDescription)
+            return
+        }
+        guard let hostname = tunnelTargets.hostname(for: service.id), let token = storedToken else {
             report(SharingWarning.namedTunnelUnconfigured(service))
             return
         }
-        guard service.portMode.fixedValue != nil else {
+        guard let fixed = service.portMode.fixedValue else {
             report(SharingWarning.namedTunnelNeedsFixedPort(service))
+            return
+        }
+        guard let port = status(of: service).port else { return }
+        guard port == fixed else {
+            report("\(service.name) is listening on port \(port). Restart it on the configured port \(fixed) before sharing.")
             return
         }
         await share(service, plan: .named(token: token, hostname: hostname))
@@ -52,14 +63,14 @@ extension AppState {
             report(SharingWarning.sshTunnelUnconfigured(service))
             return
         }
-        guard case let .running(_, port) = status(of: service) else { return }
-        await share(service, plan: .ssh(target: target, port: port))
+        guard case let .running(_, port, family) = status(of: service) else { return }
+        await share(service, plan: .ssh(target: target, port: port, family: family))
     }
 
     private func share(_ service: Service, plan: TunnelPlan) async {
         // Tunnel teardown keys on the origin process group, which a route does not have.
         guard service.kind == .command else { return }
-        guard let tunnelRuntime, case let .running(pid?, _) = status(of: service) else { return }
+        guard let tunnelRuntime, case let .running(pid?, _, _) = status(of: service) else { return }
         Telemetry.send(.shareStarted(.init(plan)))
         await tunnelRuntime.start(
             serviceID: service.id,

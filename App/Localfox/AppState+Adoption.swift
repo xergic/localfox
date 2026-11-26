@@ -17,35 +17,42 @@ extension AppState {
         adoptedServiceIDs.contains(service.id)
     }
 
-    /// True when Start is settled here, because the user routed to the running
-    /// server or backed out. False means start a copy as usual.
-    ///
-    /// Skips a service that is running or already starting, because `startAll`
-    /// calls `start` for every service in the project.
-    func routesToExistingServer(_ service: Service) async -> Bool {
-        let before = status(of: service)
-        guard !isHeadlessRun, !before.isActive, !before.isTransitioning, let directory = service.directory else {
-            return false
-        }
-        // Held for the lookup so a second click cannot ask twice.
+    /// Stop or project removal can cancel a Start while the filesystem and socket scan is in flight.
+    func startCommand(_ service: Service, projectName: String, runtime: ServiceRuntime) async {
+        let lookup = Task { await existingServer(for: service, runtime: runtime) }
+        pendingStarts[service.id] = lookup
         setStatus(.starting, for: service.id)
-        let found = await ExistingServerFinder().find(
-            in: directory,
-            excludingGroups: await runtime?.ownedGroups() ?? [],
-            excludingPorts: Set(statuses.values.compactMap(\.port)),
-            excludingDirectories: worktreeDirectories(of: service)
-        )
-        guard let found else { return false }
-        switch ask(about: found, for: service) {
+        let found = await lookup.value
+        guard pendingStarts[service.id] == lookup else { return }
+        let choice = found.map { ask(about: $0, for: service) } ?? .startAnother
+        // A modal panel runs its own event loop. Check again before acting on its answer.
+        guard pendingStarts[service.id] == lookup else { return }
+        pendingStarts.removeValue(forKey: service.id)
+        switch choice {
         case .route:
+            guard let found, let routeWatcher else {
+                setStatus(.stopped, for: service.id)
+                return
+            }
             adoptedServiceIDs.insert(service.id)
-            await routeWatcher?.start(id: service.id, port: found.port)
+            await routeWatcher.start(id: service.id, port: found.port, family: found.family)
         case .startAnother:
-            return false
+            await runtime.start(service, projectName: projectName)
+            Telemetry.send(.serviceStarted)
         case .cancel:
-            setStatus(before, for: service.id)
+            setStatus(.stopped, for: service.id)
         }
-        return true
+    }
+
+    private func existingServer(for service: Service, runtime: ServiceRuntime) async -> ExistingServer? {
+        guard !isHeadlessRun, let directory = service.directory else { return nil }
+        return await ExistingServerFinder().find(
+            in: directory,
+            excludingGroups: await runtime.ownedGroups(),
+            excludingPorts: Set(statuses.values.compactMap(\.port)),
+            excludingDirectories: worktreeDirectories(of: service),
+            host: service.domain.value
+        )
     }
 
     /// The route is gone and the process is untouched, whichever side ended it.

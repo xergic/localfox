@@ -134,6 +134,10 @@ public enum HelperIdentity {
     /// evaluate trust without needing root itself.
     func exportRootCA(reply: @escaping (Data?, String?) -> Void)
 
+    /// Rotates only the expired root matching this DER fingerprint. A repeated
+    /// request cannot rotate the replacement root.
+    func regenerateRootCA(_ fingerprint: String, reply: @escaping (String?) -> Void)
+
     /// The last lines of Caddy's log, for the diagnostics pane.
     func caddyLog(lines: Int, reply: @escaping (String) -> Void)
 
@@ -174,6 +178,11 @@ public enum HelperState: Hashable, Sendable {
     /// so the app shows a setup wall until this is true.
     public var canServe: Bool {
         if case .ready = self { return true }
+        return false
+    }
+
+    public var isProxyRunning: Bool {
+        if case let .ready(_, running) = self { return running }
         return false
     }
 }

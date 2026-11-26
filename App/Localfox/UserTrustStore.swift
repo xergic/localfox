@@ -61,6 +61,7 @@ enum UserTrustStore {
 
 enum UserTrustStoreError: LocalizedError {
     case noRoot
+    case expiredRoot
     case add(OSStatus)
     case trust(OSStatus)
     case delete(OSStatus, fingerprint: String)
@@ -69,6 +70,8 @@ enum UserTrustStoreError: LocalizedError {
         switch self {
         case .noRoot:
             "The helper has no Localfox certificate yet. Start the proxy, then try again."
+        case .expiredRoot:
+            "The proxy still has an expired authority. Retry Repair Certificate to generate a new one."
         case let .add(status):
             "macOS could not add the Localfox certificate to your login keychain (\(Self.describe(status))). "
                 + "Unlock the keychain, then try again."

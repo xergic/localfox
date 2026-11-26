@@ -10,7 +10,8 @@ extension AppState {
     /// A signed build's helper accepts these runs, so a table they sent or cleared
     /// would replace the real app's.
     var isHeadlessRun: Bool {
-        SnapshotRenderer.request != nil || CommandLine.arguments.contains("--verify-runtime")
+        let diagnostics = ["--verify-runtime", "--verify-proxy", "--verify-helper", "--install-helper", "--uninstall-helper"]
+        return SnapshotRenderer.request != nil || CommandLine.arguments.contains(where: diagnostics.contains)
     }
 
     /// One consumer loop, so events reach `setStatus` in the order the watcher
@@ -29,37 +30,20 @@ extension AppState {
         }
     }
 
-    /// Awaited, unlike the sync `setStatus` schedules, because the app exits
-    /// right after this returns.
-    ///
-    /// A route's server keeps running after Localfox quits, so a route left in
-    /// Caddy's table would keep serving the domain with nothing on screen to
-    /// stop it.
-    func clearProxy() async {
-        guard helperClient.state.canServe, !isHeadlessRun else { return }
-        do {
-            try await helperClient.setRoutes([], recordsRequests: preferences.recordsRequests)
-        } catch {
-            report(error.localizedDescription)
-        }
-    }
-
     /// Applies an edited project and reports which running services now hold a
     /// domain their process does not know about.
     ///
     /// The proxy is synced before anything restarts, so the route table already
     /// carries the new host by the time a process comes back and confirms over it.
     @discardableResult
-    func apply(_ edited: Project) async -> [Service] {
-        let previous = projects.first { $0.id == edited.id }
-        // Stopped before the save, for the reason `remove(projectID:)` gives:
-        // once the row is gone nothing can reach the watch or the process.
-        let removed = previous?.services.filter { edited.service(id: $0.id) == nil } ?? []
-        for service in removed { await stop(service) }
+    func apply(
+        _ edited: Project, replacing previous: Project, sharingChanges: [TunnelTargets.Change] = []
+    ) async throws -> [Service] {
+        let removed = previous.services.filter { edited.service(id: $0.id) == nil }
         let moved = edited.services.filter { service in
             service.kind == .command
                 && !isAdopted(service)
-                && previous?.service(id: service.id)?.domain != service.domain
+                && previous.service(id: service.id).map { $0.domain != service.domain || $0.portMode != service.portMode } == true
                 && status(of: service).isRunning
         }
         // A route's watch holds the port it started with. Asked of the watcher,
@@ -67,10 +51,14 @@ extension AppState {
         // the first probe or an event is in flight.
         var repointed: [Service] = []
         for service in edited.services
-        where service.kind == .portRoute && previous?.service(id: service.id)?.portMode != service.portMode {
+        where service.kind == .portRoute && previous.service(id: service.id)?.portMode != service.portMode {
             if await routeWatcher?.isWatching(service.id) == true { repointed.append(service) }
         }
-        replace(edited)
+        let warning = try await tunnelTargets.saving(sharingChanges, removing: removed.map(\.id)) {
+            try await persist(id: edited.id, from: previous, to: edited)
+        }
+        if let warning { report(warning) }
+        for service in removed { await stop(service) }
         removed.forEach(forget)
         for route in repointed { await restart(route) }
         await refreshDetectedIcons()

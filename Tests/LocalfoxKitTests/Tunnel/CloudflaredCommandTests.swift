@@ -18,6 +18,12 @@ struct CloudflaredCommandTests {
         #expect(request().arguments.contains("http://127.0.0.1:5173"))
     }
 
+    @Test("the quick tunnel dials the confirmed IPv6 origin")
+    func ipv6QuickOrigin() {
+        let plan = TunnelPlan.quick(port: 5173, rewritesHost: true, family: .ipv6)
+        #expect(plan.request(cloudflared: binary).arguments.contains("http://[::1]:5173"))
+    }
+
     /// The inverse of the rule above: the header carries the name because that
     /// is what Vite's allowedHosts permits, even though the dial uses the address.
     @Test("rewrites the Host header to the name Vite allows")

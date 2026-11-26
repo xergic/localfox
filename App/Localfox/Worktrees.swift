@@ -11,6 +11,7 @@ import os
 final class Worktrees {
     struct Listing: Sendable {
         let projectPath: String
+        let repository: GitWorktreeList
         let linked: [GitWorktree]
     }
 
@@ -55,11 +56,10 @@ final class Worktrees {
         let listings = OSAllocatedUnfairLock(initialState: [UUID: Listing]())
         DispatchQueue.concurrentPerform(iterations: resolved.count) { index in
             let project = resolved[index]
-            guard let list = reader.list(in: project.directory),
-                  let path = list.projectPath(for: project.directory) else { return }
-            let linked = list.linked.filter { !registered.contains($0.directory.standardizedFileURL.path) }
-            guard !linked.isEmpty else { return }
-            listings.withLock { $0[project.id] = Listing(projectPath: path, linked: linked) }
+            guard let list = reader.list(in: project.directory), !list.linked.isEmpty else { return }
+            let path = list.projectPath(for: project.directory)
+            let linked = path == nil ? [] : list.linked.filter { !registered.contains($0.directory.standardizedFileURL.path) }
+            listings.withLock { $0[project.id] = Listing(projectPath: path ?? "", repository: list, linked: linked) }
         }
         return listings.withLock { $0 }
     }

@@ -72,9 +72,10 @@ struct PortProbeTests {
         #expect(!PortProbe.accepts(port: port))
     }
 
-    @Test("a listener on ::1 only is not reachable, because the proxy dials 127.0.0.1")
-    func ignoresIPv6Only() throws {
+    @Test("an IPv6-only listener accepts only on its own family")
+    func acceptsIPv6Only() throws {
         let listener = try Listener(family: AF_INET6)
+        #expect(PortProbe.accepts(port: listener.port, family: .ipv6))
         #expect(!PortProbe.accepts(port: listener.port))
     }
 

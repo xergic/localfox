@@ -60,13 +60,13 @@ struct ServiceDetailPane: View {
                         LabeledRow(label: "State", value: status.title, valueFont: .lfDetail, tint: status.tint)
                         CardDivider()
                         LabeledRow(label: "Domain", value: service.domain.value)
-                        if case let .running(pid, port) = status {
+                        if case let .running(pid, port, family) = status {
                             if let pid {
                                 CardDivider()
                                 LabeledRow(label: "PID", value: String(pid))
                             }
                             CardDivider()
-                            LabeledRow(label: "Proxying", value: "127.0.0.1:\(port)")
+                            LabeledRow(label: "Proxying", value: "\(family.loopbackHost):\(port)")
                         }
                         if tunnel != .off {
                             CardDivider()
@@ -74,6 +74,12 @@ struct ServiceDetailPane: View {
                         }
                     }
                 }
+            }
+
+            if state.isAdopted(service) {
+                Text("Routing to an existing server. To share it publicly, start the service from Localfox.")
+                    .font(.lfDetail)
+                    .foregroundStyle(Theme.secondaryText)
             }
 
             if case let .waiting(port) = status {
@@ -157,19 +163,16 @@ struct ServiceDetailPane: View {
     }
 
     private func confirmedShare() {
-        state.preferences.warningAccepted = true
         Task { await start(pendingMode) }
     }
 
-    /// Skips the dialog once the user has accepted it, because a warning shown
-    /// every time is a warning nobody reads.
     private func requestShare(_ mode: ShareMode) {
         guard status.isRunning else { return }
         pendingMode = mode
-        if state.preferences.warningAccepted {
-            Task { await start(mode) }
-        } else {
+        if state.preferences.warnsBeforeSharing {
             confirmsShare = true
+        } else {
+            Task { await start(mode) }
         }
     }
 
@@ -221,16 +224,16 @@ struct ServiceDetailPane: View {
             }
             Spacer(minLength: 12)
 
-            if status.isActive {
+            if status.canStop {
                 ActionButton(title: "Stop", symbol: "stop.fill", tint: Theme.danger) {
                     Task { await state.stop(service) }
                 }
-                if !state.isAdopted(service) {
+                if status.isActive, !state.isAdopted(service) {
                     ActionButton(title: "Restart", symbol: "arrow.clockwise") {
                         Task { await state.restart(service) }
                     }
                 }
-            } else {
+            } else if status.canStart {
                 ActionButton(title: "Start", symbol: "play.fill", isPrimary: true) {
                     Task { await state.start(service) }
                 }
@@ -242,7 +245,7 @@ struct ServiceDetailPane: View {
 
             // Only while running: a tunnel needs the discovered port, and under
             // Auto that does not exist until the dev server has bound it.
-            if status.isRunning, service.kind == .command {
+            if status.isRunning, service.kind == .command, !state.isAdopted(service) {
                 if tunnel.isLive {
                     ActionButton(
                         title: "Stop Sharing",
@@ -271,7 +274,7 @@ struct ServiceDetailPane: View {
                 }
             }
         }
-        .opacity(status.isTransitioning ? 0.5 : 1)
+        .opacity(status == .stopping ? 0.5 : 1)
     }
 
     @ViewBuilder
@@ -306,7 +309,7 @@ struct ServiceDetailPane: View {
         let text = state.log(for: service)
         DetailCard(title: "Output") {
             if text.isEmpty {
-                Text(status.isRunning ? "No output yet." : "Start the service to see its output.")
+                Text(status.canStop ? "No output yet." : "Start the service to see its output.")
                     .font(.lfDetail)
                     .foregroundStyle(Theme.tertiaryText)
             } else {
@@ -317,9 +320,8 @@ struct ServiceDetailPane: View {
 
     static func explainWaiting(port: Int) -> String {
         """
-        Nothing accepts connections on 127.0.0.1:\(port) yet. Localfox checks \
-        every 2 seconds and routes the domain as soon as something does. A server \
-        listening only on ::1 is not reachable, because the proxy dials 127.0.0.1.
+        Waiting for a local listener on port \(port). Localfox checks IPv4 and IPv6 \
+        loopback every 2 seconds and routes the domain when the port opens.
         """
     }
 

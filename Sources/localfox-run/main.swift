@@ -171,23 +171,35 @@ enum CLI {
         let teardown = installTeardown(group: process.processGroup, label: "service")
         defer { teardown.forEach { $0.cancel() } }
 
+        // Reap the leader so a failed command cannot stay "alive" as a zombie
+        // while discovery waits for its first HTTP listener.
+        let exited = Task.detached {
+            let reason = await ProcessSpawner.reap(process.pid, within: nil)
+            while ProcessSpawner.isAlive(process.processGroup) {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            return reason
+        }
         do {
-            let listener = try await PortDiscovery().waitForPort(
-                group: process.processGroup,
-                expected: nil,
-                confirm: { await PortDiscovery.confirmHTTP($0, host: "dev.localhost") }
+            let listener = try await PortDiscovery().waitForHTTP(
+                group: process.processGroup, expected: nil, host: "dev.localhost",
+                onSlowStart: { print("still starting; waiting for the HTTP server") }
             )
             print("discovered \(listener.family) port \(listener.port), confirmed HTTP")
             if listener.bindsAllInterfaces {
                 print("warning: bound to all interfaces, so it is already reachable from your LAN")
             }
-            print("would proxy https://dev.localhost -> 127.0.0.1:\(listener.port)")
+            print("would proxy https://dev.localhost -> \(listener.family.loopbackHost):\(listener.port)")
         } catch {
             FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
         }
 
-        print("running. press ctrl-c to stop.")
-        while true { try? await Task.sleep(for: .seconds(3600)) }
+        if ProcessSpawner.isAlive(process.processGroup) { print("running. press ctrl-c to stop.") }
+        switch await exited.value {
+        case let .exited(code): exit(code)
+        case let .signalled(signal): exit(128 + signal)
+        default: exit(1)
+        }
     }
 
     /// Drains both pipes so a chatty dev server never blocks on a full buffer.

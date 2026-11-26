@@ -88,6 +88,17 @@ public struct HTTPProbe: Sendable {
         }
     }
 
+    /// Discovery needs only the response headers. A streaming response may never finish its body.
+    func answersHTTP(at url: URL, host: String?) async -> Bool {
+        guard (try? Self.validate(url)) != nil else { return false }
+        let session = Self.makeSession(timeout: timeout)
+        defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: url)
+        if let host { request.setValue(host, forHTTPHeaderField: "Host") }
+        guard let (_, response) = try? await session.bytes(for: request) else { return false }
+        return response is HTTPURLResponse
+    }
+
     // MARK: - Safety
 
     static func validate(_ url: URL) throws {
@@ -102,7 +113,7 @@ public struct HTTPProbe: Sendable {
     static func isLoopback(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
         // Localfox exposes each service under its own stable localhost subdomain.
-        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasSuffix(".localhost")
+        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]" || host.hasSuffix(".localhost")
     }
 
     // MARK: - Transport

@@ -120,7 +120,7 @@ extension AppState {
         case let .failed(failure):
             guard let service = service(id: serviceID) else { return }
             notifier.post(failure, of: service)
-        case .running where previous == .starting && !isMenuPresented && !NSApp.isActive:
+        case .running where (previous == .starting || previous == .stillStarting) && !isMenuPresented && !NSApp.isActive:
             guard let service = service(id: serviceID) else { return }
             notifier.postReady(service)
         default:

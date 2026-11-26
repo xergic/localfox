@@ -169,8 +169,8 @@ public struct CaddyConfigBuilder: Sendable {
         "/id/svc-\(route.id)-upstream"
     }
 
-    public static func upstreamPatchBody(port: Int) throws -> Data {
-        try JSONSerialization.data(withJSONObject: ["dial": "127.0.0.1:\(port)"], options: [.sortedKeys])
+    public static func upstreamPatchBody(port: Int, family: ListeningSocket.AddressFamily = .ipv4) throws -> Data {
+        try JSONSerialization.data(withJSONObject: ["dial": "\(family.loopbackHost):\(port)"], options: [.sortedKeys])
     }
 
     private func makeHTTPSRoute(_ route: ProxyRoute) -> [String: Any] {
@@ -181,7 +181,7 @@ public struct CaddyConfigBuilder: Sendable {
                 "handler": "reverse_proxy",
                 "upstreams": [[
                     "@id": "svc-\(route.id)-upstream",
-                    "dial": "127.0.0.1:\(route.port)"
+                    "dial": "\(route.family.loopbackHost):\(route.port)"
                 ]],
                 "headers": [
                     "request": [

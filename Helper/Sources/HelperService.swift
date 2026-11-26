@@ -123,6 +123,18 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
         }
     }
 
+    func regenerateRootCA(_ fingerprint: String, reply: @escaping (String?) -> Void) {
+        let reply = XPCReply(reply)
+        Task {
+            do {
+                try await runtime.regenerateRootCA(fingerprint: fingerprint)
+                reply.call(nil)
+            } catch {
+                reply.call(Self.message(for: error))
+            }
+        }
+    }
+
     func caddyLog(lines: Int, reply: @escaping (String) -> Void) {
         let clampedLines = HelperRequestValidator.clampLogLines(lines)
         let reply = XPCReply(reply)
@@ -218,7 +230,7 @@ private actor HelperRuntime {
     /// must not be able to reach an id the app did not just declare. Without
     /// this the only guard is Caddy answering 404 for an unknown `@id`, which
     /// puts the invariant in a component that knows nothing about it.
-    private var declaredRouteIDs: Set<String> = []
+    private var routeFamilies: [String: ListeningSocket.AddressFamily] = [:]
 
     init() {
         let layout = CaddyLayout.production()
@@ -235,17 +247,23 @@ private actor HelperRuntime {
     ///
     /// `setRoutes` suspends on the admin API, and this actor lets another call
     /// in while it does. The app syncs from several unstructured tasks, so two
-    /// can overlap and complete out of order, leaving `declaredRouteIDs`
+    /// can overlap and complete out of order, leaving `routeFamilies`
     /// describing a different table from the one Caddy is actually serving and
     /// undermining the `setUpstream` check that rests on it. Chaining onto the
     /// previous call makes the load and the record of it one indivisible step.
     func setRoutes(_ routes: [ProxyRoute], recordsRequests: Bool) async throws {
+        try await serializeProxyChange { runtime in
+            try await runtime.applyRoutes(routes, recordsRequests: recordsRequests)
+        }
+    }
+
+    private func serializeProxyChange(_ change: @escaping @Sendable (isolated HelperRuntime) async throws -> Void) async throws {
         let previous = routeSync
         let task = Task {
             // The previous sync's failure is its caller's to report, not this
             // one's. Only its ordering matters here.
             _ = try? await previous?.value
-            try await applyRoutes(routes, recordsRequests: recordsRequests)
+            try await change(self)
         }
         routeSync = task
         defer { if routeSync == task { routeSync = nil } }
@@ -266,10 +284,13 @@ private actor HelperRuntime {
 
         if isRunning() {
             try await adminClient.load(config: config)
-            declaredRouteIDs = Set(routes.map(\.id))
-            return
+        } else {
+            try await startProxy(config: config)
         }
+        routeFamilies = Dictionary(routes.map { ($0.id, $0.family) }, uniquingKeysWith: { first, _ in first })
+    }
 
+    private func startProxy(config: Data) async throws {
         caddy = nil
         try? FileManager.default.removeItem(at: HelperPaths.pidFile)
         let process = try await supervisor.start(
@@ -298,35 +319,66 @@ private actor HelperRuntime {
             throw error
         }
         caddy = ManagedCaddy(process: process, record: record)
-        declaredRouteIDs = Set(routes.map(\.id))
     }
 
     func setUpstream(routeID: String, port: Int) async throws {
+        try await serializeProxyChange { runtime in
+            try await runtime.applyUpstream(routeID: routeID, port: port)
+        }
+    }
+
+    private func applyUpstream(routeID: String, port: Int) async throws {
         guard isRunning() else { throw HelperRuntimeError.caddyIsNotRunning }
-        guard declaredRouteIDs.contains(routeID) else {
+        guard let family = routeFamilies[routeID] else {
             throw HelperRuntimeError.undeclaredRoute(routeID)
         }
         let path = "/id/svc-\(routeID)-upstream"
-        let body = try CaddyConfigBuilder.upstreamPatchBody(port: port)
+        let body = try CaddyConfigBuilder.upstreamPatchBody(port: port, family: family)
         try await adminClient.patch(path: path, body: body)
     }
 
     func stopProxy() async {
+        try? await serializeProxyChange { runtime in try await runtime.stopCurrentProxy() }
+    }
+
+    private func stopCurrentProxy() async throws {
         if let caddy {
             await CaddyProcessControl.stop(caddy.record)
+            guard !CaddyProcessControl.isVerified(caddy.record) else { throw HelperRuntimeError.couldNotStopCaddy }
         }
         caddy = nil
-        declaredRouteIDs = []
+        routeFamilies = [:]
         try? FileManager.default.removeItem(at: layout.adminSocket)
         try? FileManager.default.removeItem(at: HelperPaths.pidFile)
     }
 
-    func exportRootCA() async throws -> Data {
+    func regenerateRootCA(fingerprint: String) async throws {
+        try await serializeProxyChange { runtime in
+            let authority = CaddyAuthorityStorage(layout: runtime.layout, privileged: true)
+            guard try authority.matchesExpiredRoot(fingerprint: fingerprint) else { return }
+            // A port change may have patched the admin config since its last full
+            // load. Preserve what is actually serving, including its log settings.
+            let config = runtime.isRunning() ? try await runtime.adminClient.config() : nil
+            let families = runtime.routeFamilies
+            try await runtime.stopCurrentProxy()
+            try authority.discardExpiredRoot(fingerprint: fingerprint)
+            if let config {
+                try await runtime.startProxy(config: config)
+                runtime.routeFamilies = families
+            }
+        }
+    }
+
+    func exportRootCA() async throws -> Data? {
         do {
             let response = try await adminClient.rootCA(id: HelperPaths.caID)
             return try JSONDecoder().decode(RootCAResponse.self, from: response).pemData
         } catch {
-            return try Data(contentsOf: HelperPaths.rootCertificate)
+            do {
+                return try Data(contentsOf: HelperPaths.rootCertificate)
+            } catch CocoaError.fileReadNoSuchFile {
+                return nil
+            }
         }
     }
 
@@ -420,6 +472,7 @@ private enum HelperPaths {
 private enum HelperRuntimeError: LocalizedError {
     case caddyIsNotRunning
     case couldNotVerifyCaddy
+    case couldNotStopCaddy
     case undeclaredRoute(String)
 
     var errorDescription: String? {
@@ -428,6 +481,8 @@ private enum HelperRuntimeError: LocalizedError {
             "Caddy is not running. Set the routes before changing an upstream."
         case .couldNotVerifyCaddy:
             "Caddy started, but the helper could not verify its process identity."
+        case .couldNotStopCaddy:
+            "Caddy is still running. Retry replacing the certificate after the proxy stops."
         case let .undeclaredRoute(routeID):
             """
             Route \(routeID) is not in the table the helper is serving. \

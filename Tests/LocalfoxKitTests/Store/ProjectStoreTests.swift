@@ -26,6 +26,32 @@ struct ProjectStoreTests {
         #expect(try await store.load().isEmpty)
     }
 
+    @Test("a failed write preserves the last successfully saved project list")
+    func failedSavePreservesProjects() async throws {
+        let url = temporaryURL()
+        let folder = url.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder)
+        let store = ProjectStore(url: url)
+        let project = Project(name: "Manual", directory: nil, services: [])
+        await #expect(throws: StoreError.self) { try await store.update(id: project.id, from: nil, to: project) }
+        #expect(await store.projects().isEmpty)
+    }
+
+    @Test("a stale edit cannot overwrite a more recent project")
+    func staleEditIsRejected() async throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = ProjectStore(url: url)
+        let project = Project(name: "Manual", directory: nil, services: [])
+        var renamed = project
+        renamed.name = "Renamed"
+        try await store.update(id: project.id, from: nil, to: project)
+        try await store.update(id: project.id, from: project, to: renamed)
+        await #expect(throws: StoreError.projectChanged) { try await store.update(id: project.id, from: project, to: nil) }
+        #expect(await store.projects() == [renamed])
+    }
+
     @Test("a saved list round-trips")
     func roundTrips() async throws {
         let url = temporaryURL()

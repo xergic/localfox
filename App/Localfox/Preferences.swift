@@ -25,7 +25,8 @@ final class Preferences {
 
     private enum Key {
         static let rewriteHost = Flag(key: "sharing.rewriteHostHeader", defaultsTo: true)
-        static let warningAccepted = Flag(key: "sharing.warningAccepted", defaultsTo: false)
+        // The old warningAccepted key was set by confirming one share, even without opting out.
+        static let warnsBeforeSharing = Flag(key: "sharing.warnBeforeSharing", defaultsTo: true)
         static let recordsRequests = Flag(key: "proxy.recordsRequests", defaultsTo: true)
         static let sharesUsageData = Flag(key: "telemetry.sharesUsageData", defaultsTo: true)
         static let notifiesCrashes = Flag(key: "notifications.crashes", defaultsTo: true)
@@ -41,9 +42,8 @@ final class Preferences {
     /// `ALLOWED_HOSTS`, and any OAuth callback, want the real public name.
     var rewritesHostHeader: Bool { didSet { write(rewritesHostHeader, Key.rewriteHost, oldValue) } }
 
-    /// Whether the user has accepted the exposure warning and asked not to see
-    /// it again.
-    var warningAccepted: Bool { didSet { write(warningAccepted, Key.warningAccepted, oldValue) } }
+    /// Ask before every share unless the preference is explicitly switched off.
+    var warnsBeforeSharing: Bool { didSet { write(warnsBeforeSharing, Key.warnsBeforeSharing, oldValue) } }
 
     /// Writes one JSON line per request to the proxy's access log.
     var recordsRequests: Bool { didSet { write(recordsRequests, Key.recordsRequests, oldValue) } }
@@ -69,11 +69,12 @@ final class Preferences {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        for flag in [Key.rewriteHost, Key.warningAccepted, Key.recordsRequests, Key.sharesUsageData, Key.notifiesCrashes, Key.compactRows] {
+        for flag in [Key.rewriteHost, Key.warnsBeforeSharing, Key.recordsRequests,
+                     Key.sharesUsageData, Key.notifiesCrashes, Key.compactRows] {
             defaults.register(defaults: [flag.key: flag.defaultsTo])
         }
         rewritesHostHeader = defaults.bool(forKey: Key.rewriteHost.key)
-        warningAccepted = defaults.bool(forKey: Key.warningAccepted.key)
+        warnsBeforeSharing = defaults.bool(forKey: Key.warnsBeforeSharing.key)
         recordsRequests = defaults.bool(forKey: Key.recordsRequests.key)
         sharesUsageData = defaults.bool(forKey: Key.sharesUsageData.key)
         notifiesCrashes = defaults.bool(forKey: Key.notifiesCrashes.key)

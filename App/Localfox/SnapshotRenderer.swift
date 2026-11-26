@@ -40,7 +40,8 @@ enum SnapshotRenderer {
             await state.start(service)
         }
 
-        for _ in 0..<80 {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(250))
             if project.services.allSatisfy({ !state.status(of: $0).isTransitioning }) { break }
         }
@@ -49,6 +50,11 @@ enum SnapshotRenderer {
         for service in project.services {
             let status = state.status(of: service)
             print("  \(service.name): \(status.label)  ->  https://\(service.domain.value)")
+            if let route = state.proxyRoute(for: service) {
+                print("    upstream \(route.family.loopbackHost):\(route.port)")
+            } else if service.kind == .command {
+                failed = true
+            }
             if case let .failed(failure) = status {
                 failed = true
                 print("    \(failure.reason)")
@@ -185,7 +191,8 @@ enum SnapshotRenderer {
         if CommandLine.arguments.contains("--update") { Updater.shared.previewBanner(version: "9.9.0") }
         if selection == nil { await state.load() }
 
-        let renderer = ImageRenderer(content: content(for: request.surface, state: state, selection: selection))
+        state.selectedServiceID = selection
+        let renderer = ImageRenderer(content: content(for: request.surface, state: state))
         renderer.scale = 2
 
         guard let image = renderer.nsImage,
@@ -219,13 +226,13 @@ enum SnapshotRenderer {
     /// every scrollable surface carries a `scrolls` escape hatch that this path
     /// turns off. `forcesHover` reveals actions that only exist under a pointer.
     @ViewBuilder
-    private static func content(for surface: Surface, state: AppState, selection: UUID?) -> some View {
+    private static func content(for surface: Surface, state: AppState) -> some View {
         switch surface {
         case .popover:
             MenuView(scrolls: false, forcesHover: CommandLine.arguments.contains("--hover"))
                 .environment(state)
         case .dashboard:
-            DashboardContent(scrolls: false, initialSelection: selection)
+            DashboardContent(scrolls: false)
                 .environment(state)
                 .frame(width: Theme.Metrics.dashboardWidth, height: Theme.Metrics.dashboardHeight)
                 .background(Theme.background)

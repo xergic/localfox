@@ -87,11 +87,13 @@ public struct PortDiscovery: Sendable {
             guard port > 0 else { continue }
 
             let isIPv6 = (internetInfo.insi_vflag & UInt8(INI_IPV6)) != 0
+            let wildcard = Self.isWildcard(internetInfo, isIPv6: isIPv6)
+            guard wildcard || Self.isLoopback(internetInfo, isIPv6: isIPv6) else { continue }
             found.append(DiscoveredListener(
                 pid: pid,
                 port: port,
                 family: isIPv6 ? .ipv6 : .ipv4,
-                bindsAllInterfaces: Self.isWildcard(internetInfo, isIPv6: isIPv6)
+                bindsAllInterfaces: wildcard
             ))
         }
         return found
@@ -103,6 +105,15 @@ public struct PortDiscovery: Sendable {
             return withUnsafeBytes(of: address) { $0.allSatisfy { $0 == 0 } }
         }
         return info.insi_laddr.ina_46.i46a_addr4.s_addr == 0
+    }
+
+    private static func isLoopback(_ info: in_sockinfo, isIPv6: Bool) -> Bool {
+        if isIPv6 {
+            return withUnsafeBytes(of: info.insi_laddr.ina_6) { bytes in
+                bytes.last == 1 && bytes.dropLast().allSatisfy { $0 == 0 }
+            }
+        }
+        return info.insi_laddr.ina_46.i46a_addr4.s_addr == in_addr_t(INADDR_LOOPBACK).bigEndian
     }
 
     // MARK: - Choosing
@@ -132,16 +143,17 @@ public struct PortDiscovery: Sendable {
     }
 
     public static func best(of listeners: [DiscoveredListener], expected: Int?) -> DiscoveredListener? {
-        listeners
-            .filter { !debuggerPorts.contains($0.port) }
-            .max { lhs, rhs in
-                let left = score(lhs, expected: expected)
-                let right = score(rhs, expected: expected)
-                // Lowest port breaks a tie, so the result is stable across polls
-                // rather than flapping between two equally scored sockets.
-                if left != right { return left < right }
-                return lhs.port > rhs.port
-            }
+        ranked(listeners, expected: expected).first
+    }
+
+    private static func ranked(_ listeners: [DiscoveredListener], expected: Int?) -> [DiscoveredListener] {
+        listeners.filter { Service.isRoutablePort($0.port) && !debuggerPorts.contains($0.port) }.sorted { lhs, rhs in
+            let left = score(lhs, expected: expected)
+            let right = score(rhs, expected: expected)
+            if left != right { return left > right }
+            if lhs.port != rhs.port { return lhs.port < rhs.port }
+            return lhs.family == .ipv4 && rhs.family == .ipv6
+        }
     }
 
     // MARK: - Waiting
@@ -172,29 +184,47 @@ public struct PortDiscovery: Sendable {
     public func waitForPort(
         group: pid_t,
         expected: Int?,
-        timeout: Duration = .seconds(30),
+        timeout: Duration? = .seconds(30),
         interval: Duration = .milliseconds(250),
         confirm: @Sendable (DiscoveredListener) async -> Bool = { _ in true }
     ) async throws -> DiscoveredListener {
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        var previous: Int?
-
-        while ContinuousClock.now < deadline {
+        let deadline = timeout.map { ContinuousClock.now.advanced(by: $0) }
+        var previous: Set<DiscoveredListener> = []
+        while true {
+            try Task.checkCancellation()
+            if let deadline, let timeout, ContinuousClock.now >= deadline {
+                throw DiscoveryFailure.timedOut(seconds: Int(timeout.components.seconds))
+            }
             guard ProcessSpawner.isAlive(group) else { throw DiscoveryFailure.processExited }
-
-            if let candidate = Self.best(of: listeners(inGroup: group), expected: expected) {
-                if previous == candidate.port, await confirm(candidate) {
+            let candidates = Self.ranked(listeners(inGroup: group), expected: expected)
+            for candidate in candidates where previous.contains(candidate) {
+                try Task.checkCancellation()
+                if await confirm(candidate) {
+                    try Task.checkCancellation()
                     return candidate
                 }
-                previous = candidate.port
-            } else {
-                previous = nil
             }
-            try? await Task.sleep(for: interval)
+            previous = Set(candidates)
+            try await Task.sleep(for: interval)
         }
+    }
 
-        let seconds = Int(timeout.components.seconds)
-        throw DiscoveryFailure.timedOut(seconds: seconds)
+    /// Keep a cold build alive and back off the poll when it takes longer than a normal startup.
+    public func waitForHTTP(
+        group: pid_t, expected: Int?, host: String,
+        slowAfter: Duration = .seconds(30), onSlowStart: @Sendable () async -> Void
+    ) async throws -> DiscoveredListener {
+        do {
+            return try await waitForPort(group: group, expected: expected, timeout: slowAfter) {
+                await Self.confirmHTTP($0, host: host)
+            }
+        } catch DiscoveryFailure.timedOut {
+            try Task.checkCancellation()
+            await onSlowStart()
+            return try await waitForPort(group: group, expected: expected, timeout: nil, interval: .seconds(1)) {
+                await Self.answersHTTP(port: $0.port, family: $0.family, host: host, timeout: .seconds(15))
+            }
+        }
     }
 
     /// Confirms a candidate really is a web server.
@@ -203,21 +233,14 @@ public struct PortDiscovery: Sendable {
     /// inspector also listens. Any HTTP-shaped answer, including a 404 or a 500,
     /// settles it, so only a confirmed port is ever pushed to the proxy.
     public static func confirmHTTP(_ listener: DiscoveredListener, host: String) async -> Bool {
-        await answersHTTP(port: listener.port)
+        await answersHTTP(port: listener.port, family: listener.family, host: host)
     }
 
-    public static func answersHTTP(port: Int) async -> Bool {
-        let probe = HTTPProbe(timeout: .milliseconds(800))
-        guard let url = URL(string: "http://127.0.0.1:\(port)/") else { return false }
-        do {
-            _ = try await probe.probe(url)
-            return true
-        } catch HTTPProbeError.notHTTP {
-            return false
-        } catch {
-            // A timeout or a transport error usually means the server is up but
-            // still compiling, which is exactly when a dev server is slowest.
-            return true
-        }
+    public static func answersHTTP(
+        port: Int, family: ListeningSocket.AddressFamily = .ipv4, host: String? = nil,
+        timeout: Duration = .seconds(2)
+    ) async -> Bool {
+        guard let url = URL(string: "http://\(family.loopbackHost):\(port)/") else { return false }
+        return await HTTPProbe(timeout: timeout).answersHTTP(at: url, host: host)
     }
 }

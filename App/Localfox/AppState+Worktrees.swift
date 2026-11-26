@@ -43,8 +43,8 @@ extension AppState {
     /// Every linked worktree, not only those with rows. A server an agent runs in
     /// a worktree nested inside the project is not the project's own.
     func worktreeDirectories(of service: Service) -> [URL] {
-        guard let project = project(owning: service.id) else { return [] }
-        return worktrees.listings[project.id]?.linked.map(\.directory) ?? []
+        guard let project = project(owning: service.id), let directory = service.directory else { return [] }
+        return worktrees.listings[project.id]?.repository.otherCheckoutDirectories(for: directory.resolvingSymlinksInPath()) ?? []
     }
 
     /// A worktree with something running cannot be closed, so a running server

@@ -114,10 +114,7 @@ struct PreferencesSheet: View {
                     title: "Warn before sharing",
                     subtitle: "Ask what a public tunnel exposes each time one is opened"
                 ) {
-                    PreferenceCheckbox(isOn: Binding(
-                        get: { !preferences.warningAccepted },
-                        set: { preferences.warningAccepted = !$0 }
-                    ))
+                    PreferenceCheckbox(isOn: $preferences.warnsBeforeSharing)
                 }
             }
         }

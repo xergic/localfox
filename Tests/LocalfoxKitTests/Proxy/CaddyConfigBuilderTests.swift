@@ -441,3 +441,14 @@ struct CaddyConfigBuilderTests {
         return try #require(String(data: data, encoding: .utf8))
     }
 }
+
+extension CaddyConfigBuilderTests {
+    @Test("an IPv6 service and its port update use bracketed numeric loopback")
+    func ipv6Route() throws {
+        let route = try #require(ProxyRoute(id: "v6", domain: LocalDomain("v6.localhost")!, port: 5173, family: .ipv6))
+        let config = try CaddyConfigBuilder(options: options).build(routes: [route])
+        #expect(String(decoding: config, as: UTF8.self).contains(#""dial" : "[::1]:5173""#))
+        let body = try CaddyConfigBuilder.upstreamPatchBody(port: 5174, family: route.family)
+        #expect(String(decoding: body, as: UTF8.self) == #"{"dial":"[::1]:5174"}"#)
+    }
+}

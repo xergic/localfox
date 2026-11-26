@@ -12,6 +12,9 @@ public struct ListeningSocket: Identifiable, Hashable, Codable, Sendable {
     public enum AddressFamily: String, Codable, Sendable {
         case ipv4
         case ipv6
+
+        /// Numeric loopback host for a URL or a host:port pair.
+        public var loopbackHost: String { self == .ipv4 ? "127.0.0.1" : "[::1]" }
     }
 
     public init(pid: pid_t, port: Int, host: String, family: AddressFamily) {

@@ -84,7 +84,7 @@ struct WorktreeSection: View {
     private var isOpen: Bool { forcesOpen || state.showsRows(of: checkout) }
 
     private var anyActive: Bool {
-        checkout.services.contains { state.status(of: $0).isActive }
+        checkout.services.contains { state.status(of: $0).canStop }
     }
 
     private func toggle() {

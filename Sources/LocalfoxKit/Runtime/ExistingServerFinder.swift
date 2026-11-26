@@ -16,8 +16,10 @@ public struct ExistingServerFinder: Sendable {
         in directory: URL,
         excludingGroups: Set<pid_t>,
         excludingPorts: Set<Int>,
-        excludingDirectories: [URL] = []
+        excludingDirectories: [URL] = [],
+        host: String? = nil
     ) async -> ExistingServer? {
+        guard !Task.isCancelled else { return nil }
         let finder = self
         let candidates = await Task.detached {
             finder.scan(
@@ -27,24 +29,51 @@ public struct ExistingServerFinder: Sendable {
                 excludingDirectories: excludingDirectories.map { Self.resolved($0.path) }
             )
         }.value
-        // Every candidate at once, so a Start never waits out one timeout per port.
-        // The HTTP request only when there is a choice to make.
-        let checked = await withTaskGroup(of: (server: ExistingServer, answersHTTP: Bool)?.self) { group in
+        guard !candidates.isEmpty, !Task.isCancelled else { return nil }
+        return await confirmedServer(in: candidates, host: host)
+    }
+
+    private enum ProbeResult {
+        case response(ExistingServer, Bool)
+        case initialWindowElapsed
+    }
+
+    /// Give a cold dev server time to compile its first request. When another listener
+    /// has already returned HTTP, preserve port ranking for the usual two-second probe
+    /// window, then use the best confirmed server and cancel the remaining requests.
+    private func confirmedServer(in candidates: [ExistingServer], host: String?) async -> ExistingServer? {
+        await withTaskGroup(of: ProbeResult.self) { group in
+            defer { group.cancelAll() }
             for server in candidates {
                 group.addTask {
-                    // Caddy dials 127.0.0.1. A server bound to `::1` alone would route to a 502.
-                    guard PortProbe.accepts(port: server.port) else { return nil }
-                    let answers = candidates.count > 1 ? await PortDiscovery.answersHTTP(port: server.port) : false
-                    return (server, answers)
+                    let answers = await PortDiscovery.answersHTTP(
+                        port: server.port, family: server.family, host: host, timeout: .seconds(15)
+                    )
+                    return .response(server, answers)
                 }
             }
-            var found: [(server: ExistingServer, answersHTTP: Bool)] = []
-            for await result in group { if let result { found.append(result) } }
-            return found
+            group.addTask {
+                try? await Task.sleep(for: .seconds(2))
+                return .initialWindowElapsed
+            }
+            var eligible = Set(candidates)
+            var confirmed: Set<ExistingServer> = []
+            var initialWindowElapsed = false
+            for await result in group {
+                guard !Task.isCancelled else { return nil }
+                switch result {
+                case let .response(server, true): confirmed.insert(server)
+                case let .response(server, false): eligible.remove(server)
+                case .initialWindowElapsed: initialWindowElapsed = true
+                }
+                guard let preferred = candidates.first(where: eligible.contains) else { return nil }
+                if confirmed.contains(preferred) { return preferred }
+                if initialWindowElapsed, let ready = ExistingServerMatcher.preferred(from: candidates, confirmed: confirmed) {
+                    return ready
+                }
+            }
+            return nil
         }
-        let reachable = checked.map(\.server).sorted { $0.port < $1.port }
-        let answering = Set(checked.filter(\.answersHTTP).map(\.server.port))
-        return ExistingServerMatcher.preferred(from: reachable, answeringHTTP: answering)
     }
 
     /// Blocking: one `lsof` sweep, one `sysctl`, and a few `proc_pidinfo` reads.

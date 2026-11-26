@@ -22,12 +22,28 @@ struct AddProjectSheet: View {
         var name: String
         var domain: String
         var command: String
+        var port = ""
         let directory: URL
         let framework: ServiceType
         let evidence: [String]
         let expectedPort: Int?
         let isApex: Bool
+
+        var service: Service? {
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let domain = LocalDomain(domain) else { return nil }
+            let fixed = Service.routablePort(from: port)
+            guard port.isEmpty || fixed != nil else { return nil }
+            return Service(
+                id: id, name: name, directory: directory, framework: framework, command: command, domain: domain,
+                portMode: fixed.map(PortMode.fixed) ?? .auto, expectedPort: expectedPort, portFlagStyle: framework.portFlagStyle
+            )
+        }
     }
+
+    @State private var saveError: String?
+    @State private var isSaving = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,8 +57,11 @@ struct AddProjectSheet: View {
             }
 
             Divider().overlay(Theme.separator)
+            if let saveError { ErrorBanner(message: saveError) }
             footer
         }
+        .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
         .frame(width: 620, height: 560)
         .background(Theme.background)
         .themedSurface(state.appearance.colorScheme)
@@ -122,12 +141,12 @@ struct AddProjectSheet: View {
                         )
                         if scan.isWorkspace {
                             CardDivider()
-                            LabeledRow(label: "Workspace", value: "Yes, \(candidates.count) runnable packages", valueFont: .lfDetail)
+                            LabeledRow(label: "Workspace", value: "Yes, \(scan.candidates.count) runnable packages", valueFont: .lfDetail)
                         }
                     }
                 }
 
-                if candidates.isEmpty {
+                if scan.candidates.isEmpty {
                     ErrorBanner(message: scan.warnings.first ?? "Nothing runnable was found here.")
                 }
 
@@ -164,6 +183,8 @@ struct AddProjectSheet: View {
         panel.prompt = "Scan"
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        scan = nil
+        candidates = []
         isScanning = true
         scanError = nil
         // Detached, because this view is main actor isolated and an inherited
@@ -185,7 +206,21 @@ struct AddProjectSheet: View {
     private func adopt(_ result: ProjectScan) {
         scan = result
         projectName = result.name
-        candidates = result.candidates.map {
+        candidates = Self.drafts(for: result)
+        isScanning = false
+    }
+
+    static func drafts(for result: ProjectScan) -> [EditableService] {
+        if result.candidates.isEmpty {
+            let slug = LocalDomain.slug(result.name)
+            let host = LocalDomain("\(slug).localhost")?.value ?? "app.localhost"
+            return [EditableService(
+                id: UUID(), isSelected: true, name: result.name, domain: host,
+                command: "", directory: result.root, framework: .unknown,
+                evidence: [], expectedPort: nil, isApex: true
+            )]
+        }
+        return result.candidates.map {
             EditableService(
                 id: $0.id,
                 isSelected: $0.isSelected,
@@ -199,7 +234,6 @@ struct AddProjectSheet: View {
                 isApex: $0.isApex
             )
         }
-        isScanning = false
     }
 
     private var selected: [EditableService] { candidates.filter(\.isSelected) }
@@ -207,7 +241,7 @@ struct AddProjectSheet: View {
     private var canSave: Bool {
         guard scan != nil, !projectName.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
         guard !selected.isEmpty else { return false }
-        return selected.allSatisfy { LocalDomain($0.domain) != nil && clash(for: $0) == nil }
+        return selected.allSatisfy { $0.service != nil && clash(for: $0) == nil }
     }
 
     /// Names the service already using a domain, so the clash is shown against
@@ -222,21 +256,19 @@ struct AddProjectSheet: View {
     }
 
     private func save() {
-        guard let scan else { return }
-        let services = selected.compactMap { candidate -> Service? in
-            guard let domain = LocalDomain(candidate.domain) else { return nil }
-            return Service(
-                name: candidate.name,
-                directory: candidate.directory,
-                framework: candidate.framework,
-                command: candidate.command,
-                domain: domain,
-                expectedPort: candidate.expectedPort,
-                portFlagStyle: candidate.framework.portFlagStyle
-            )
+        guard canSave, let scan else { return }
+        let services = selected.compactMap(\.service)
+        let project = Project(name: projectName, directory: scan.root, services: services)
+        isSaving = true
+        Task {
+            defer { isSaving = false }
+            do {
+                try await state.add(project)
+                dismiss()
+            } catch {
+                saveError = error.localizedDescription
+            }
         }
-        state.add(Project(name: projectName, directory: scan.root, services: services))
-        dismiss()
     }
 }
 
@@ -270,6 +302,10 @@ private struct ServiceEditor: View {
 
                 CardDivider()
                 LabelledField(label: "Command", text: $candidate.command, monospaced: true)
+                LabelledField(
+                    label: "Fixed port (blank for Auto)", text: $candidate.port, monospaced: true,
+                    error: AddRouteSheet.portError(for: candidate.port)
+                )
                 LabelledField(
                     label: "Domain",
                     text: $candidate.domain,

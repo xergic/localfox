@@ -32,6 +32,12 @@ struct SSHTunnelCommandTests {
         #expect(!request().arguments.contains { $0.contains("localhost") })
     }
 
+    @Test("an IPv6 reverse forward uses the confirmed loopback family")
+    func ipv6Forward() {
+        let plan = TunnelPlan.ssh(target: target(), port: 5173, family: .ipv6)
+        #expect(plan.request(cloudflared: URL(fileURLWithPath: "/unused")).arguments.contains("8080:[::1]:5173"))
+    }
+
     /// LocalDomain uses StrictHostKeyChecking=accept-new here, which trusts
     /// whatever key answers first. Batch mode fails instead, and the failure
     /// says what to do about it.

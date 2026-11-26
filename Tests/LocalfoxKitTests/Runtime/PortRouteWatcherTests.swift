@@ -32,7 +32,7 @@ struct PortRouteWatcherTests {
     @Test("follows the port open and closed, reporting each change once")
     func followsThePort() async throws {
         let open = Mutex(false)
-        let watcher = PortRouteWatcher(interval: .milliseconds(10), probe: { _ in open.withLock { $0 } })
+        let watcher = PortRouteWatcher(interval: .milliseconds(10), probe: { _, _ in open.withLock { $0 } })
         let recorder = Recorder(watcher)
         let id = UUID()
         await watcher.start(id: id, port: port)
@@ -51,7 +51,7 @@ struct PortRouteWatcherTests {
         let release = Mutex<CheckedContinuation<Void, Never>?>(nil)
         let watcher = PortRouteWatcher(
             interval: .milliseconds(10),
-            probe: { _ in
+            probe: { _, _ in
                 await withCheckedContinuation { continuation in release.withLock { $0 = continuation } }
                 return true
             }
@@ -71,9 +71,28 @@ struct PortRouteWatcherTests {
         #expect(await !watcher.isWatching(id))
     }
 
+    @Test("a manual route discovers IPv6 and adoption stays on its confirmed family")
+    func followsConfirmedFamily() async throws {
+        let open = Mutex<ListeningSocket.AddressFamily>(.ipv6)
+        let watcher = PortRouteWatcher(interval: .milliseconds(10)) { _, family in
+            open.withLock { $0 == family }
+        }
+        let recorder = Recorder(watcher)
+        let id = UUID()
+        await watcher.start(id: id, port: port)
+        try await recorder.waitUntil { $0.last == .running(pid: nil, port: 8081, family: .ipv6) }
+        await watcher.stop(id: id)
+        try await recorder.waitUntil { $0.last == .stopped }
+        await watcher.start(id: id, port: port, family: .ipv6)
+        try await recorder.waitUntil { $0.last == .running(pid: nil, port: 8081, family: .ipv6) }
+        open.withLock { $0 = .ipv4 }
+        try await recorder.waitUntil { $0.last == .waiting(port: 8081) }
+        await watcher.stopAll()
+    }
+
     @Test("starting twice keeps one watch")
     func startIsIdempotent() async throws {
-        let watcher = PortRouteWatcher(interval: .milliseconds(10), probe: { _ in false })
+        let watcher = PortRouteWatcher(interval: .milliseconds(10), probe: { _, _ in false })
         let recorder = Recorder(watcher)
         let id = UUID()
         await watcher.start(id: id, port: port)

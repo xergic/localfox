@@ -20,6 +20,14 @@ struct ProxyRouteTests {
         #expect(LocalDomain("wishfox.example") == nil)
     }
 
+    @Test("an absent family decodes as IPv4 and an IPv6 route survives the XPC payload")
+    func roundTripsLoopbackFamily() throws {
+        let legacy = Data(#"{"id":"web","domain":{"value":"wishfox.localhost"},"port":3000}"#.utf8)
+        #expect(try JSONDecoder().decode(ProxyRoute.self, from: legacy).family == .ipv4)
+        let route = try #require(ProxyRoute(id: "web", domain: domain, port: 3000, family: .ipv6))
+        #expect(try JSONDecoder().decode(ProxyRoute.self, from: JSONEncoder().encode(route)) == route)
+    }
+
     @Test("malformed JSON cannot cross the XPC boundary")
     func rejectsMalformedJSON() {
         let decoder = JSONDecoder()

@@ -12,11 +12,11 @@ public struct PortRouteEvent: Hashable, Sendable {
 /// close it and open it again, which is why this keeps polling after the
 /// first success instead of confirming once the way `PortDiscovery` does.
 public actor PortRouteWatcher {
-    public typealias Probe = @Sendable (Int) async -> Bool
+    public typealias Probe = @Sendable (Int, ListeningSocket.AddressFamily) async -> Bool
 
     /// Called from the watch task, never on the actor. A loopback connect is
     /// answered at once, so `PortProbe`'s timeout only bounds the rare case.
-    public static let loopbackProbe: Probe = { port in PortProbe.accepts(port: port) }
+    public static let loopbackProbe: Probe = { port, family in PortProbe.accepts(port: port, family: family) }
 
     /// One ordered stream rather than a callback per event. A callback that
     /// hops to the main actor in its own task can land `.running` after
@@ -44,17 +44,20 @@ public actor PortRouteWatcher {
 
     public func isWatching(_ id: UUID) -> Bool { watches[id] != nil }
 
-    public func start(id: UUID, port: Int) {
+    public func start(id: UUID, port: Int, family: ListeningSocket.AddressFamily? = nil) {
         guard watches[id] == nil else { return }
         generation += 1
         let current = generation
         emit(.starting, for: id)
+        let families = family.map { [$0] } ?? [.ipv4, .ipv6]
         let task = Task { [weak self, interval, probe] in
             var last: ServiceStatus = .starting
             while !Task.isCancelled {
-                let next: ServiceStatus = await probe(port)
-                    ? .running(pid: nil, port: port)
-                    : .waiting(port: port)
+                var next = ServiceStatus.waiting(port: port)
+                for candidate in families where await probe(port, candidate) {
+                    next = .running(pid: nil, port: port, family: candidate)
+                    break
+                }
                 if next != last {
                     guard await self?.report(next, for: id, generation: current) == true else { return }
                     last = next

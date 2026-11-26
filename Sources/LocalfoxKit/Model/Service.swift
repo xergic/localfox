@@ -8,8 +8,9 @@ import Foundation
 public enum ServiceStatus: Hashable, Sendable {
     case stopped
     case starting
+    case stillStarting
     /// `pid` is nil for a port route, whose listener Localfox does not own.
-    case running(pid: pid_t?, port: Int)
+    case running(pid: pid_t?, port: Int, family: ListeningSocket.AddressFamily = .ipv4)
     case stopping
     /// A port route whose port is closed. Active, because the user started it
     /// and Stop must stay reachable, but routeless: a route to a closed port
@@ -42,10 +43,24 @@ public enum ServiceStatus: Hashable, Sendable {
         return false
     }
 
+    public var canStart: Bool {
+        switch self {
+        case .stopped, .failed: true
+        default: false
+        }
+    }
+
+    public var canStop: Bool {
+        switch self {
+        case .starting, .stillStarting, .running, .waiting: true
+        default: false
+        }
+    }
+
     public var isActive: Bool {
         switch self {
         case .running, .waiting: true
-        case .stopped, .starting, .stopping, .failed: false
+        case .stopped, .starting, .stillStarting, .stopping, .failed: false
         }
     }
 
@@ -53,13 +68,13 @@ public enum ServiceStatus: Hashable, Sendable {
     /// disables interaction on.
     public var isTransitioning: Bool {
         switch self {
-        case .starting, .stopping: true
+        case .starting, .stillStarting, .stopping: true
         case .stopped, .running, .waiting, .failed: false
         }
     }
 
     public var port: Int? {
-        if case let .running(_, port) = self { return port }
+        if case let .running(_, port, _) = self { return port }
         return nil
     }
 }

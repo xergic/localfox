@@ -13,6 +13,7 @@ struct ServiceRow: View {
     var isKeyboardSelected = false
 
     @Environment(AppState.self) private var state
+    @Environment(\.openWindow) private var openWindow
     @State private var isHovering = false
     /// Holds the actions on screen while the QR popover is open, because the
     /// pointer leaves the row to reach it and the button would vanish under it.
@@ -57,7 +58,7 @@ struct ServiceRow: View {
             withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
         }
         .contextMenu { menu }
-        .opacity(status.isTransitioning ? 0.5 : 1)
+        .opacity(status == .stopping ? 0.5 : 1)
     }
 
     private var isCompact: Bool { state.preferences.compactRows }
@@ -123,22 +124,24 @@ struct ServiceRow: View {
 
     private var actions: some View {
         HStack(spacing: 1) {
-            if status.isActive {
+            if status.canStop {
                 IconButton(symbol: "stop.fill", tint: Theme.danger, help: "Stop") {
                     Task { await state.stop(service) }
                 }
-                if !state.isAdopted(service) {
+                if status.isActive, !state.isAdopted(service) {
                     IconButton(symbol: "arrow.clockwise", help: "Restart") {
                         Task { await state.restart(service) }
                     }
                 }
-            } else if !status.isTransitioning {
+            } else if status.canStart {
                 IconButton(symbol: "play.fill", tint: Theme.success, help: "Start") {
                     Task { await state.start(service) }
                 }
             }
             if let url = state.url(for: service) {
                 IconButton(symbol: "globe", help: "Open in browser") { NSWorkspace.shared.open(url) }
+            }
+            if let url = service.url {
                 IconButton(symbol: "doc.on.doc", help: "Copy URL") { Pasteboard.copy(url.absoluteString) }
             }
             if let shared = state.publicURL(for: service) {
@@ -162,20 +165,28 @@ struct ServiceRow: View {
 
     @ViewBuilder
     private var menu: some View {
-        if status.isActive {
+        if selection == nil {
+            Button("Show in Dashboard") {
+                state.selectedServiceID = service.id
+                WindowPresenter.showDashboard(openWindow)
+            }
+        }
+        if status.canStop {
             Button("Stop") { Task { await state.stop(service) } }
-            if !state.isAdopted(service) {
+            if status.isActive, !state.isAdopted(service) {
                 Button("Restart") { Task { await state.restart(service) } }
             }
-        } else {
+        } else if status.canStart {
             Button("Start") { Task { await state.start(service) } }
         }
         Divider()
         if let url = state.url(for: service) {
             Button("Open in Browser") { NSWorkspace.shared.open(url) }
+        }
+        if let url = service.url {
             Button("Copy URL") { Pasteboard.copy(url.absoluteString) }
         }
-        if service.kind == .command { shareItems }
+        if service.kind == .command, !state.isAdopted(service) { shareItems }
         if let directory = service.directory {
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([directory])
@@ -256,9 +267,8 @@ struct ServiceRow: View {
 
     private func requestShare() {
         guard status.isRunning else { return }
-        if !state.preferences.warningAccepted {
+        if state.preferences.warnsBeforeSharing {
             guard confirmsPublicShare() else { return }
-            state.preferences.warningAccepted = true
         }
         Task { await state.share(service) }
     }

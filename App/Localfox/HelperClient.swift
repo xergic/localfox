@@ -227,6 +227,9 @@ final class HelperClient {
                 reply.resumeHelperResult(message)
             }
         }
+        if case let .ready(version, _) = state {
+            assignState(.ready(version: version, caddyRunning: true))
+        }
     }
 
     func setUpstream(routeID: String, port: Int) async throws {
@@ -242,6 +245,12 @@ final class HelperClient {
             proxy.stopProxy { message in
                 reply.resumeHelperResult(message)
             }
+        }
+    }
+
+    func regenerateRootCA(fingerprint: String) async throws {
+        try await call(operation: "replace the expired Localfox certificate") { proxy, reply in
+            proxy.regenerateRootCA(fingerprint) { reply.resumeHelperResult($0) }
         }
     }
 

@@ -32,10 +32,13 @@ final class AppState {
 
     /// Held here rather than in the dashboard's own state, because the popover
     /// asks for the sheet on a window that does not exist yet.
+    var selectedServiceID: UUID?
     var presentsPreferences = false
+    var isChangingCertificate = false
     @ObservationIgnored var updateCheckQueued = false
     /// Bound to the menu bar window, so the global shortcut can open it.
     var isMenuPresented = false
+    @ObservationIgnored private var trustCheckID = UUID()
     private(set) var trust: RootCAStatus = .notGenerated
     private(set) var shellEnvironment: ShellEnvironment?
     private(set) var lastError: String?
@@ -58,6 +61,10 @@ final class AppState {
     var routeWatcher: PortRouteWatcher?
     /// Command services routed to a server Localfox did not start. Not private: `AppState+Adoption.swift`.
     var adoptedServiceIDs: Set<UUID> = []
+    @ObservationIgnored var pendingStarts: [UUID: Task<ExistingServer?, Never>] = [:]
+    @ObservationIgnored private var proxyWrite: Task<Void, Never>?
+    @ObservationIgnored private var isShuttingDown = false
+    private(set) var servedRoutes: Set<ProxyRoute> = []
 
     init(store: ProjectStore = ProjectStore(), helperClient: HelperClient = HelperClient()) {
         self.store = store
@@ -68,6 +75,7 @@ final class AppState {
     /// Snapshot only, in place of `load()`, on a machine whose helper may not be approved.
     func adoptFixture(_ projects: [Project], statuses: [UUID: ServiceStatus], tunnels: [UUID: TunnelStatus], logs: [UUID: String]) {
         (self.projects, self.statuses, self.tunnels, self.logs) = (projects, statuses, tunnels, logs)
+        servedRoutes = Set(allServices.compactMap { proxyRoute(for: $0) })
         trust = .trusted(RootCAIdentity(fingerprint: "00", commonName: "Demo", notBefore: .now, notAfter: .distantFuture), expiresIn: 3e7)
     }
     #endif
@@ -87,7 +95,7 @@ final class AppState {
             assign(\.lastError, error.localizedDescription)
         }
 
-        await refreshSetup()
+        await refreshSetup(syncExistingRoutes: true)
 
         // Off the main actor's critical path: a broken rc file can make this
         // take the full timeout, and the project list should draw regardless.
@@ -95,22 +103,24 @@ final class AppState {
             let resolved = (try? await resolver.resolve()) ?? ShellEnvironmentResolver.fallback()
             await MainActor.run { self.adopt(resolved) }
         }
-
-        if !isHeadlessRun { await syncProxy() }
     }
 
-    /// The runtime cannot exist until the shell environment is known, because a
-    /// dev command launched with launchd's PATH would not find its own tooling.
-    /// Re-reads helper and certificate state.
-    ///
-    /// Called on launch and whenever the app is brought forward, because the
-    /// user approves the helper in System Settings, outside this process.
-    func refreshSetup() async {
+    /// Approval happens outside the app. Start the proxy with the current route
+    /// table before reading its CA, including on a Mac with no projects yet.
+    func refreshSetup(syncExistingRoutes: Bool = false) async {
+        let wasAvailable = helper.canServe
         await helperClient.refresh()
+        if !helper.canServe { servedRoutes = [] }
+        if !isHeadlessRun, case let .ready(_, running) = helper,
+           syncExistingRoutes || !wasAvailable || !running || Set(desiredRoutes) != servedRoutes {
+            await syncProxy()
+        }
         await refreshTrust()
     }
 
-    private func refreshTrust() async {
+    func refreshTrust() async {
+        let id = UUID()
+        trustCheckID = id
         guard helperClient.state.canServe else {
             assign(\.trust, .notGenerated)
             return
@@ -122,9 +132,15 @@ final class AppState {
             // table, so before anything runs there is no leaf and the evaluation
             // falls back to the root on its own.
             let chain = await ProxyLeafFetcher.chain(for: host)
+            guard id == trustCheckID else { return }
             assign(\.trust, try TrustEvaluator.evaluate(rootPEM: pem, servedChain: chain, host: host))
-            if let pem { cacheRootForDevServers(pem) }
+            if trust.isUsable, let pem {
+                cacheRootForDevServers(pem)
+            } else {
+                try? FileManager.default.removeItem(at: CaddyLayout.userReadableRoot)
+            }
         } catch {
+            guard id == trustCheckID else { return }
             assign(\.trust, .notGenerated)
             assign(\.lastError, error.localizedDescription)
         }
@@ -181,47 +197,15 @@ final class AppState {
     /// the helper answers, the user has already agreed to the privileged part,
     /// and a working helper with an untrusted CA still shows a browser warning.
     private func finishSetupAction() async {
+        let registrationError = helperClient.lastError
         await refreshSetup()
-        assign(\.lastError, helperClient.lastError)
+        if let registrationError { report(registrationError) }
         guard helperClient.state.canServe, trust.remedy == .install else { return }
         await installCertificate()
     }
 
     func openHelperApproval() {
         helperClient.openApproval()
-    }
-
-    func installCertificate() async {
-        do {
-            guard let pem = try await helperClient.exportRootCA() else {
-                throw UserTrustStoreError.noRoot
-            }
-            try await UserTrustStore.install(pem: pem)
-            Telemetry.send(.certificateTrusted(.success))
-        } catch {
-            assign(\.lastError, error.localizedDescription)
-            Telemetry.send(.certificateTrusted(.failure))
-        }
-        await refreshTrust()
-    }
-
-    func repairCertificate() async {
-        if case let .stale(installed, _) = trust {
-            try? await UserTrustStore.remove(fingerprint: installed.fingerprint)
-        }
-        await installCertificate()
-    }
-
-    func removeCertificate() async {
-        guard let identity = trust.identity else { return }
-        do {
-            try await UserTrustStore.remove(fingerprint: identity.fingerprint)
-            Telemetry.send(.certificateUntrusted(.success))
-        } catch {
-            assign(\.lastError, error.localizedDescription)
-            Telemetry.send(.certificateUntrusted(.failure))
-        }
-        await refreshTrust()
     }
 
     /// Reloads the request list for one service.
@@ -258,35 +242,45 @@ final class AppState {
         requests[service.id] ?? []
     }
 
+    private var desiredRoutes: [ProxyRoute] {
+        isShuttingDown ? [] : allServices.compactMap { proxyRoute(for: $0) }
+    }
+
     /// Pushes the current service ports to the proxy. Only running services have
     /// a port, so a stopped one is simply absent from the table.
     func syncProxy() async {
-        guard helperClient.state.canServe else { return }
-        var routes: [ProxyRoute] = []
-        for service in allServices {
-            guard let port = status(of: service).port,
-                  let route = ProxyRoute(
-                      id: String(service.id.uuidString.prefix(8)),
-                      domain: service.domain,
-                      port: port
-                  ) else { continue }
-            routes.append(route)
+        guard !isHeadlessRun else { return }
+        let previous = proxyWrite
+        let write = Task {
+            await previous?.value
+            guard helperClient.state.canServe else {
+                servedRoutes = []
+                return
+            }
+            let routes = desiredRoutes
+            do {
+                try await helperClient.setRoutes(routes, recordsRequests: preferences.recordsRequests)
+                servedRoutes = Set(routes)
+            } catch {
+                servedRoutes = []
+                assign(\.lastError, error.localizedDescription)
+            }
         }
-        do {
-            try await helperClient.setRoutes(routes, recordsRequests: preferences.recordsRequests)
-        } catch {
-            assign(\.lastError, error.localizedDescription)
-        }
+        proxyWrite = write
+        await write.value
+        if proxyWrite == write { proxyWrite = nil }
     }
 
     private func adopt(_ environment: ShellEnvironment) {
         assign(\.shellEnvironment, environment)
         guard runtime == nil else { return }
+        let (events, updates) = AsyncStream<(UUID, ServiceStatus)>.makeStream()
+        Task { [weak self] in
+            for await (id, status) in events { self?.setStatus(status, for: id) }
+        }
         runtime = ServiceRuntime(
             shell: environment,
-            onStatus: { [weak self] id, status in
-                Task { @MainActor in self?.setStatus(status, for: id) }
-            },
+            onStatus: { id, status in updates.yield((id, status)) },
             onLog: { [weak self] id in
                 Task { @MainActor in await self?.refreshLog(for: id) }
             }
@@ -305,17 +299,17 @@ final class AppState {
     // MARK: - Running services
 
     func start(_ service: Service) async {
-        guard let project = project(owning: service.id) else { return }
+        guard !isShuttingDown, status(of: service).canStart, let project = project(owning: service.id) else { return }
         switch service.kind {
         case .command:
             guard let runtime else { return }
-            if await routesToExistingServer(service) { return }
-            await runtime.start(service, projectName: project.name)
+            await startCommand(service, projectName: project.name, runtime: runtime)
         case .portRoute:
             guard let routeWatcher, let port = service.portMode.fixedValue else { return }
+            setStatus(.starting, for: service.id)
             await routeWatcher.start(id: service.id, port: port)
+            Telemetry.send(.serviceStarted)
         }
-        Telemetry.send(.serviceStarted)
     }
 
     /// Closes the tunnel first, and waits for it.
@@ -325,6 +319,11 @@ final class AppState {
     /// while cloudflared is still queued behind a multi-second termination
     /// grace period, serving 502s under a URL somebody already has.
     func stop(_ service: Service) async {
+        if let lookup = pendingStarts.removeValue(forKey: service.id) {
+            lookup.cancel()
+            setStatus(.stopped, for: service.id)
+            return
+        }
         await unshare(service)
         switch service.kind {
         case .command where isAdopted(service): await endAdoption(of: service.id)
@@ -339,8 +338,11 @@ final class AppState {
     func restart(_ service: Service) async {
         guard !isAdopted(service) else { return }
         if service.kind == .portRoute {
-            await stop(service)
-            await start(service)
+            guard let routeWatcher, let port = service.portMode.fixedValue else { return }
+            await unshare(service)
+            await routeWatcher.stop(id: service.id)
+            guard !isShuttingDown, project(owning: service.id) != nil else { return }
+            await routeWatcher.start(id: service.id, port: port)
             return
         }
         guard let runtime, let project = project(owning: service.id) else { return }
@@ -371,10 +373,13 @@ final class AppState {
     /// via the status callback, and that hop is not guaranteed to land before
     /// the process exits.
     func stopEverything() async {
+        isShuttingDown = true
+        for lookup in pendingStarts.values { lookup.cancel() }
+        pendingStarts.removeAll()
         await tunnelRuntime?.stopAll()
         await routeWatcher?.stopAll()
         await runtime?.stopAll()
-        await clearProxy()
+        await syncProxy()
     }
 
     func log(for service: Service) -> String {
@@ -406,23 +411,27 @@ final class AppState {
 
     // MARK: - Editing
 
-    func add(_ project: Project) {
-        var updated = projects
-        updated.append(project)
-        save(updated)
+    func add(_ project: Project) async throws {
+        try await persist(id: project.id, from: nil, to: project)
         Telemetry.send(.projectAdded)
-        Task { await refreshDetectedIcons() }
+        await refreshDetectedIcons()
     }
 
-    /// Stops first. Once the project is gone there is no row left to reach its
-    /// processes from, and a dev server would outlive the interface that
-    /// started it with no way to stop it short of quitting Localfox.
+    /// Keep the service handles until every process and port watch has stopped.
     func remove(projectID: UUID) async {
         guard let project = projects.first(where: { $0.id == projectID }) else { return }
         // Its worktrees too: once the project is gone they have no heading to be stopped from.
         let services = project.services + worktrees.checkouts(for: projectID).flatMap(\.services)
+        do {
+            let warning = try await tunnelTargets.saving([], removing: services.map(\.id)) {
+                try await persist(id: projectID, from: project, to: nil)
+            }
+            if let warning { report(warning) }
+        } catch {
+            report(error.localizedDescription)
+            return
+        }
         await stopAll(services)
-        save(projects.filter { $0.id != projectID })
         preferences.pinnedProjectIDs.remove(projectID)
         Telemetry.send(.projectRemoved)
         services.forEach(forget)
@@ -435,17 +444,16 @@ final class AppState {
         assign(\.logs[service.id], nil)
         assign(\.tunnels[service.id], nil)
         assign(\.requests[service.id], nil)
-        tunnelTargets.remove(for: service.id)
-    }
-
-    func replace(_ project: Project) {
-        save(projects.map { $0.id == project.id ? project : $0 })
     }
 
     func setIcon(_ path: String?, for project: Project) async {
         var edited = project
         edited.iconPath = path.map { edited.iconPathValue(for: URL(fileURLWithPath: $0)) }
-        await apply(edited)
+        do {
+            try await apply(edited, replacing: project)
+        } catch {
+            report(error.localizedDescription)
+        }
     }
 
     // MARK: - Icons
@@ -497,20 +505,14 @@ final class AppState {
         allServices.first { $0.domain == domain && !serviceIDs.contains($0.id) }
     }
 
-    private func save(_ updated: [Project]) {
-        let previous = projects
-        assign(\.projects, updated)
-        rederiveWorktrees()
-        Task { [store] in
-            do {
-                try await store.save(updated)
-            } catch {
-                await MainActor.run {
-                    self.assign(\.projects, previous)
-                    self.assign(\.lastError, error.localizedDescription)
-                }
-            }
+    func persist(id: UUID, from previous: Project?, to edited: Project?) async throws {
+        try await store.update(id: id, from: previous, to: edited)
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            if let edited { projects[index] = edited } else { projects.remove(at: index) }
+        } else if let edited {
+            projects.append(edited)
         }
+        rederiveWorktrees()
     }
 
     // MARK: - Observation
