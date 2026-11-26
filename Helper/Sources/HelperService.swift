@@ -24,7 +24,7 @@ final class HelperService: NSObject, NSXPCListenerDelegate, LocalfoxHelperProtoc
         // team is exactly the team it should require. An ad hoc build has no
         // team, and rather than fall back to trusting anyone, it refuses every
         // client: a local build simply cannot drive the privileged path.
-        guard let team = HelperIdentity.currentTeamIdentifier() else { return false }
+        guard let team = HelperIdentity.currentTeamIdentifier else { return false }
 
         var requirement: SecRequirement?
         guard SecRequirementCreateWithString(
@@ -277,7 +277,7 @@ private actor HelperRuntime {
             httpPort: 80,
             httpsPort: 443,
             privileged: true,
-            signingTeam: HelperIdentity.currentTeamIdentifier()
+            signingTeam: HelperIdentity.currentTeamIdentifier
         )
         guard let snapshot = ProcessInspector().snapshot(pid: process.pid),
               snapshot.executableName == "caddy",

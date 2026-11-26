@@ -33,7 +33,11 @@ public enum HelperIdentity {
     /// so the helper's own team is exactly the team it should require of its
     /// client. Returns nil for an unsigned or ad hoc signed build, which is what
     /// a local `make app` produces; the caller decides what to do about that.
-    public static func currentTeamIdentifier() -> String? {
+    ///
+    /// Read once. An update replaces the signed binary under a running helper,
+    /// a fresh lookup can then fail, and a nil team refuses every client,
+    /// including the new app that would retire it.
+    public static let currentTeamIdentifier: String? = {
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return nil }
 
@@ -47,7 +51,7 @@ public enum HelperIdentity {
               let details = information as? [String: Any] else { return nil }
 
         return details[kSecCodeInfoTeamIdentifier as String] as? String
-    }
+    }()
 
     /// Why `SMAppService.daemon` registration cannot succeed for this build.
     ///
@@ -78,7 +82,7 @@ public enum HelperIdentity {
     /// Injectable so both branches are testable without moving the test bundle.
     public static func registrationBlocker(
         bundleURL: URL = Bundle.main.bundleURL,
-        teamIdentifier: String? = currentTeamIdentifier()
+        teamIdentifier: String? = currentTeamIdentifier
     ) -> RegistrationBlocker? {
         let path = bundleURL.resolvingSymlinksInPath().path
         guard path.hasPrefix("/Applications/") else {
