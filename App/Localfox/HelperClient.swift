@@ -11,6 +11,8 @@ final class HelperClient {
 
     @ObservationIgnored private var connection: ManagedXPCConnection?
     @ObservationIgnored private var connectionID: UUID?
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var hasAutoReinstalled = false
 
     init() {
         state = Self.registeredState(for: SMAppService.daemon(plistName: HelperIdentity.plistName).status)
@@ -81,27 +83,44 @@ final class HelperClient {
             assignError(blocker.message)
             return
         }
-        var failureMessage: String?
+        let failureMessage = await reregister()
+        assignError(failureMessage)
+        await refresh()
+        if let failureMessage { assignError(failureMessage) }
+    }
+
+    /// Returns the failure message, or nil when launchd accepted the new registration.
+    private func reregister() async -> String? {
         do {
             try await service.unregister()
             tearDownConnection()
             try service.register()
-            assignError(nil)
+            return nil
         } catch {
-            failureMessage =
-                "Localfox could not reinstall its helper. Open Login Items in System Settings, "
-                    + "remove any pending Localfox approval, then try again. \(error.localizedDescription)"
-            assignError(failureMessage)
+            return "Localfox could not reinstall its helper. Open Login Items in System Settings, "
+                + "remove any pending Localfox approval, then try again. \(error.localizedDescription)"
         }
-        await refresh()
-        if let failureMessage { assignError(failureMessage) }
     }
 
     func openApproval() {
         SMAppService.openSystemSettingsLoginItems()
     }
 
+    /// Every caller shares one check. The popover and the dashboard both refresh
+    /// as they appear, and two checks over one connection tear down each other's
+    /// pings. The task is unstructured so a popover closing mid-check cannot
+    /// cancel a helper replacement halfway.
     func refresh() async {
+        if let refreshTask { return await refreshTask.value }
+        let task = Task {
+            await performRefresh()
+            refreshTask = nil
+        }
+        refreshTask = task
+        await task.value
+    }
+
+    private func performRefresh() async {
         switch service.status {
         case .notRegistered, .notFound:
             tearDownConnection()
@@ -110,29 +129,49 @@ final class HelperClient {
             tearDownConnection()
             assignState(.requiresApproval)
         case .enabled:
-            do {
-                var response = try await ping()
-                let expectedVersion = Self.appVersion
-                if response.version != expectedVersion, let replaced = await replaceOutdatedHelper() {
-                    response = replaced
-                }
-                guard response.version == expectedVersion else {
-                    assignState(.versionMismatch(expected: expectedVersion, found: response.version))
-                    return
-                }
-                assignState(.ready(version: response.version, caddyRunning: response.caddyRunning))
-            } catch {
-                assignState(.enabledButUnreachable)
-                // The XPC rejection reason is the single most useful diagnostic
-                // here, and discarding it leaves the wall saying "Not responding"
-                // with nothing to act on.
-                assignError(Self.unreachableMessage(error))
-            }
+            await connectToCurrentHelper()
+            if !state.canServe { await reinstallOnce() }
         @unknown default:
             tearDownConnection()
             assignState(.notRegistered)
             assignError("macOS returned an unknown helper status. Update macOS, then reopen Localfox.")
         }
+    }
+
+    private func connectToCurrentHelper() async {
+        do {
+            var response = try await ping()
+            let expectedVersion = Self.appVersion
+            if response.version != expectedVersion, let replaced = await replaceOutdatedHelper() {
+                response = replaced
+            }
+            guard response.version == expectedVersion else {
+                assignState(.versionMismatch(expected: expectedVersion, found: response.version))
+                return
+            }
+            assignState(.ready(version: response.version, caddyRunning: response.caddyRunning))
+        } catch {
+            assignState(.enabledButUnreachable)
+            // The XPC rejection reason is the single most useful diagnostic
+            // here, and discarding it leaves the wall saying "Not responding"
+            // with nothing to act on.
+            assignError(Self.unreachableMessage(error))
+        }
+    }
+
+    /// What Reinstall Helper does, done once per launch without the click.
+    ///
+    /// After an update launchd keeps the old helper running, and when it cannot
+    /// be retired (it refuses the new app, or its replacement never answers)
+    /// re-registering is the only thing that swaps it.
+    private func reinstallOnce() async {
+        guard !hasAutoReinstalled, HelperIdentity.registrationBlocker() == nil else { return }
+        hasAutoReinstalled = true
+        if let failureMessage = await reregister() {
+            assignError(failureMessage)
+            return
+        }
+        await performRefresh()
     }
 
     func ping() async throws -> (version: String, caddyRunning: Bool) {

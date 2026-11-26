@@ -536,6 +536,12 @@ https://github.com/xergic/localfox/releases/download/vX.Y.Z-rc.N/appcast.xml`, w
 the bundle under a running helper, so check the helper version, the proxy and the CA
 before tagging the final release.
 
+**An update replaces the helper without a click.** `HelperClient.refresh` tries `retire`
+first, and when the old helper refuses the new app or its replacement never answers, it
+runs the Reinstall Helper cycle once per launch. `HelperIdentity.currentTeamIdentifier`
+is a `static let` because a live lookup after the binary is replaced on disk can return
+nil, and a nil team refuses every client. Up to 1.6.2 every update ended on the setup wall.
+
 A second `tap` job then sets `version` and `sha256` in `Casks/localfox.rb` of
 `xergic/homebrew-tap` and pushes. It runs on its own runner with the
 `HOMEBREW_TAP_TOKEN` secret, a fine-grained PAT with contents write on the tap
