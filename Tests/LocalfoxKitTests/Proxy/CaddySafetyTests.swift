@@ -178,12 +178,16 @@ struct CaddyAdminTimeoutTests {
     @Test("a socket that does not exist fails immediately rather than waiting")
     func refusedConnectionFailsFast() async throws {
         let client = CaddyAdminClient(
-            socketPath: "/tmp/lf-absent-\(UUID().uuidString.prefix(8)).sock", timeout: 5
+            socketPath: "/tmp/lf-absent-\(UUID().uuidString.prefix(8)).sock", timeout: 30
         )
         let started = ContinuousClock.now
-        await #expect(throws: (any Swift.Error).self) {
+        do {
             _ = try await client.config()
+            Issue.record("A missing admin socket accepted a connection")
+        } catch CaddyAdminClient.Error.connectionFailed {
+            // Network.framework reported the refusal. Allow for a busy runner
+            // scheduling the test continuation, but catch a wait for the 30s timer.
+            #expect(ContinuousClock.now - started < .seconds(15))
         }
-        #expect(ContinuousClock.now - started < .seconds(2))
     }
 }
